@@ -37,6 +37,7 @@ repos:
     hooks:
       - id: commit-msg-prefix
         name: Commit msg deve iniciar com API-<numero>
-        language: python
-        entry: python -c 'import sys, re; sys.exit(0 if re.match(r"^API-[0-9]+", open(sys.argv[1]).read()) else 1)'
+        language: pygrep
+        entry: '^API-[0-9]+'
         stages: [commit-msg]
+        args: ['--multiline', '--negate']
