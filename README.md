@@ -19,20 +19,22 @@ CI:
 
 ## Estrutura de Diretórios para Projeto de Machine Learning
 
-.
-├── data/                # Dados brutos e processados usados nos experimentos (não versionar arquivos grandes)
-├── dist/                # Artefatos de distribuição gerados (wheel / sdist) após build
-├── models/              # Modelos treinados e checkpoints serializados (.pkl, .pt, .joblib, etc.)
-├── README.md            # Este arquivo — documentação do projeto e estrutura
-├── requirements.txt     # Lista de dependências (pip install -r requirements.txt)
-├── setup.py             # Configuração de empacotamento do projeto (pip install -e . / build)
-├── sonar-project.properties
-|     # Configuração do SonarQube/SonarCloud (paths, cobertura, chave do projeto)
-├── src/                 # Código-fonte principal do projeto (package root)
-│   ├── __init__.py      # Marca `src` como pacote Python (ponto de entrada do package)
-│   ├── main.py          # Script simples / entrypoint — funções de exemplo e CLI mínima
-│   └── services/        # Módulos de lógica aplicada (serviços, funções reutilizáveis)
-│       └── serviceHello.py
-│           # Funções utilitárias de exemplo (ex.: hello(), add()) usadas nos testes
-└── tests/               # Testes automatizados (pytest)
-    └── test_hello.py    # Testes simples para validar serviceHello / main
+├── .github/                      # Configurações GitHub Actions (CI/CD)
+│   └── workflows/
+│       ├── cd.yml                # Pipeline de Continuous Deployment
+│       └── ci.yml                # Pipeline de Continuous Integration (lint, testes, SonarQube)
+├── data/                         # Diretório para datasets e arquivos de dados
+│   └── .gitkeep
+├── models/                       # Diretório para modelos ML treinados (.pkl, .h5, etc.)
+│   └── .gitkeep
+├── src/                          # Código-fonte principal da aplicação
+│   ├── services/                 # Módulos de serviços e lógica de negócio
+│   │   └── serviceHello.py       # Serviço de exemplo
+│   └── main.py                   # Ponto de entrada da aplicação
+├── tests/                        # Testes unitários e de integração
+│   └── test_example.py           # Testes do serviceHello
+├── .gitignore                    # Arquivos/diretórios ignorados pelo Git
+├── README.md                     # Documentação do projeto
+├── requirements.txt              # Dependências Python do projeto
+├── setup.py                      # Configuração de empacotamento do projeto
+└── sonar-project.properties      # Configuração SonarQube para análise de código
