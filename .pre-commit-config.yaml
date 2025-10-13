@@ -1,0 +1,43 @@
+repos:
+  # Pre-commit hooks gerais
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace        # Remove espaços em branco no final das linhas
+      - id: end-of-file-fixer          # Garante que arquivos terminem com nova linha
+      - id: check-yaml                 # Verifica sintaxe de arquivos YAML
+      - id: check-json                 # Verifica sintaxe de arquivos JSON
+      - id: check-added-large-files    # Previne commit de arquivos grandes (>500KB)
+        args: ['--maxkb=500']
+      - id: check-case-conflict        # Verifica conflitos de case em nomes de arquivos
+      - id: check-merge-conflict       # Verifica marcadores de merge conflict
+      - id: detect-private-key         # Detecta chaves privadas acidentalmente commitadas
+      - id: mixed-line-ending          # Detecta e corrige mixed line endings
+        args: ['--fix=lf']
+
+  # Ruff - Fast Python linter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      # Run the linter
+      - id: ruff
+        args: [--fix]
+      # Run the formatter
+      - id: ruff-format
+
+  # Black - Python code formatter
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3.11
+
+  # Local hooks
+  - repo: local
+    hooks:
+      - id: commit-msg-prefix
+        name: Commit msg deve iniciar com API-<numero>
+        language: pygrep
+        entry: '^API-[0-9]+'
+        stages: [commit-msg]
+        args: ['--multiline', '--negate']
