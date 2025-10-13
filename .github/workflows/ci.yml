@@ -4,13 +4,11 @@ on:
     branches:
       - 'API-**'
       - develop
-      - 'sprint-**'
       - main
   push:
     branches:
       - 'API-**'
       - develop
-      - 'sprint-**'
       - main
 permissions:
   contents: read
