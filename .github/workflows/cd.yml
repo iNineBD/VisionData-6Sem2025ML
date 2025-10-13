@@ -1,0 +1,79 @@
+name: CD-ML
+
+on:
+  workflow_run:
+    workflows: ["CI-ML"]
+    types: [completed]
+  workflow_dispatch: {}
+
+env:
+  PYTHON_VERSION: '3.11'
+  TAG: ${{ github.sha }}
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-package:
+    if: ${{ (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Pack source
+        run: tar -czf pack-visiondata.tar.gz src requirements.txt || tar -czf pack-visiondata.tar.gz src
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pack-visiondata
+          path: pack-visiondata.tar.gz
+
+  deploy-dev:
+    needs: build-package
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'develop' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pack-visiondata
+      - run: |
+          tar -xzf pack-visiondata.tar.gz
+          echo "Deploy DEV (develop)"
+
+  deploy-qa:
+    needs: build-package
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_run' && startsWith(github.event.workflow_run.head_branch, 'sprint-') }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pack-visiondata
+      - run: |
+          tar -xzf pack-visiondata.tar.gz
+          echo "Deploy QA (sprint-*)"
+
+  deploy-staging:
+    needs: build-package
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pack-visiondata
+      - run: |
+          tar -xzf pack-visiondata.tar.gz
+          echo "Deploy Staging (main)"

@@ -1,0 +1,99 @@
+name: CI-ML
+on:
+  pull_request:
+    branches:
+      - 'API-**'
+      - develop
+      - 'sprint-**'
+      - main
+  push:
+    branches:
+      - 'API-**'
+      - develop
+      - 'sprint-**'
+      - main
+permissions:
+  contents: read
+
+jobs:
+  lint-and-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install deps
+        run: |
+          pip install -U pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install black ruff
+      - name: Ruff (lint)
+        run: ruff check .
+      - name: Black (format)
+        run: black --check .
+
+  build-and-test:
+    needs: [lint-and-format]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install deps
+        run: |
+          pip install -U pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest pytest-cov build
+          pip install -e .
+      - name: Tests
+        run: PYTHONPATH=. pytest --cov=src/services --cov-report=xml tests -v --tb=short
+      - name: Build (wheel/sdist)
+        run: python -m build
+      - name: Pacote (tar.gz)
+        run: tar -czf etl-py.tar.gz dist/
+      - name: Upload artifact (py)
+        uses: actions/upload-artifact@v4
+        with:
+          name: etl-py
+          path: etl-py.tar.gz
+      - name: Upload coverage for SonarQube
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  sonarqube:
+    needs: [build-and-test]
+    name: SonarQube Cloud
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: .
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tox
+        run: pip install tox
+
+      - name: Run tox
+        run: tox -e py
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
