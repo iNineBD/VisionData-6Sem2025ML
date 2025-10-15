@@ -6,6 +6,7 @@
 # website: http://jupyter.org/
 
 data
+models
 
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
