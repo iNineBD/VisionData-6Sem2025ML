@@ -7,6 +7,7 @@
 
 data
 models
+mlruns
 
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
