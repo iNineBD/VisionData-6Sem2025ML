@@ -14,12 +14,13 @@ from lightgbm import LGBMRegressor
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from sklearn.preprocessing import StandardScaler
 from mlflow.models.signature import infer_signature
+from pathlib import Path
 
 # %%
 warnings.filterwarnings("ignore")
 
-project_root = os.path.abspath(os.path.join(os.getcwd(), "../../.."))
-sys.path.insert(0, project_root)
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT))
 
 sns.set_theme(style="whitegrid")
 
@@ -103,8 +104,10 @@ def train_lightgbm(X_train, X_test, y_train, y_test):
             input_example=input_example,
         )
 
-        # salvar modelo localmente
-        joblib.dump(model, "../../../models/all_tickets_kaggle/lightgbm_model.pkl")
+        # salvar modelo localmente (usar path absoluto)
+        models_dir = REPO_ROOT / "models" / "all_tickets_kaggle"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        joblib.dump(model, models_dir / "lightgbm_model.pkl")
 
         print(f"LightGBM - MAE: {mae:.2f}, MSE: {mse:.2f}, R2: {r2:.4f}")
 
@@ -144,7 +147,9 @@ def train_sarimax(df, test_size=0.2):
         mlflow.statsmodels.log_model(fitted, name="model_sarimax")
 
         # salvar modelo localmente
-        joblib.dump(fitted, "../../../models/all_tickets_kaggle/sarimax_model.pkl")
+        models_dir = REPO_ROOT / "models" / "all_tickets_kaggle"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        joblib.dump(fitted, models_dir / "sarimax_model.pkl")
 
         print(f"SARIMAX - MAE: {mae:.2f}, MSE: {mse:.2f}, R2: {r2:.4f}")
 
@@ -199,20 +204,30 @@ def save_for_api(scaler, data, output_dir="../../../models/all_tickets_kaggle/")
     Salva apenas o necessário para a API
     NÃO precisa mais salvar feature_order!
     """
-    import os
+    from pathlib import Path
 
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs("../../../data/processed/", exist_ok=True)
+    if output_dir is None:
+        output_dir = REPO_ROOT / "models" / "all_tickets_kaggle"
+    else:
+        output_dir = Path(output_dir)
+
+    processed_dir = REPO_ROOT / "data" / "processed"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    processed_dir.mkdir(parents=True, exist_ok=True)
 
     # Salvar scaler (NECESSÁRIO)
-    joblib.dump(scaler, f"{output_dir}/scaler.pkl")
+    joblib.dump(scaler, output_dir / "scaler.pkl")
 
     # Salvar dados processados (NECESSÁRIO)
-    data.to_csv("../../../data/processed/tickets_with_features.csv", index=False)
+    data.to_csv(processed_dir / "tickets_with_features.csv", index=False)
 
-    print(f"✓ Scaler salvo em {output_dir}/scaler.pkl")
-    print("✓ Dados salvos em data/processed/tickets_with_features.csv")
+    print(f"✓ Scaler salvo em {output_dir / 'scaler.pkl'}")
+    print(f"✓ Dados salvos em {processed_dir / 'tickets_with_features.csv'}")
 
 
 # %%
-save_for_api(scaler, create_time_features(df))
+save_for_api(
+    scaler,
+    create_time_features(df),
+    output_dir=REPO_ROOT / "models" / "all_tickets_kaggle",
+)

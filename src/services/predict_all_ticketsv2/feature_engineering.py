@@ -9,12 +9,9 @@ from datetime import timedelta
 
 
 # para usar no treinamento
-def load_and_prepare(filepath_or_df):
-    """Carrega e prepara dados diários de tickets"""
-    if isinstance(filepath_or_df, str):
-        df = pd.read_csv(filepath_or_df)
-    else:
-        df = filepath_or_df
+def load_and_prepare(df):
+    """Prepara dados diários de tickets a partir de um DataFrame já carregado"""
+    df = df.copy()
 
     df["Date received"] = pd.to_datetime(df["Date received"], errors="coerce")
     df = df.dropna(subset=["Date received"])
