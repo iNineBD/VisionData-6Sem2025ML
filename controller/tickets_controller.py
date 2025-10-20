@@ -18,7 +18,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, project_root)
 
 # Importar funções compartilhadas (MESMAS DO TREINAMENTO!)
-from src.services.feature_engineering import create_single_day_features,prepare_features_for_prediction,get_feature_columns
+from src.services.predict_all_ticketsv2.feature_engineering import create_single_day_features,prepare_features_for_prediction,get_feature_columns
 
 # ==================== RESPONSE MODELS ====================
 class PredictionPoint(BaseModel):

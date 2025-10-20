@@ -6,7 +6,6 @@ import sys
 import seaborn as sns
 import mlflow
 import mlflow.sklearn
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from lightgbm import LGBMRegressor
 from statsmodels.tsa.statespace.sarimax import SARIMAX
@@ -25,7 +24,7 @@ sns.set_theme(style='whitegrid')
 
 # %%
 from src.utils.extract_data import get_data
-from src.services.feature_engineering import load_and_prepare, create_time_features
+from src.services.predict_all_ticketsv2.feature_engineering import load_and_prepare, create_time_features
 
 # %%
 mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
