@@ -8,6 +8,9 @@
 data
 models
 mlruns
+mlartifacts
+.vscode
+.idea
 
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
