@@ -108,12 +108,29 @@ def get_feature_columns():
     """Retorna lista ordenada de nomes das features (sem date e ticket_count)"""
     # Ordem exata das features geradas
     feature_names = [
-        'day', 'month', 'year', 'weekday', 'weekofyear',
-        'flag_1', 'flag_2', 'flag_3', 'flag_7', 'flag_14', 'flag_30',
-        'roll_mean_3', 'roll_mean_7', 'roll_mean_14', 'roll_mean_30',
-        'roll_std_3', 'roll_std_7', 'roll_std_14', 'roll_std_30',
-        'diff_1', 'pct_change_1',
-        'is_month_start', 'is_month_end'
+        'day',
+        'month',
+        'year',
+        'weekday',
+        'weekofyear',
+        'flag_1',
+        'flag_2',
+        'flag_3',
+        'flag_7',
+        'flag_14',
+        'flag_30',
+        'roll_mean_3',
+        'roll_std_3',
+        'roll_mean_7',
+        'roll_std_7',
+        'roll_mean_14',
+        'roll_std_14',
+        'roll_mean_30',
+        'roll_std_30',
+        'diff_1',
+        'pct_change_1',
+        'is_month_start',
+        'is_month_end'
     ]
     return feature_names
 
