@@ -161,7 +161,7 @@ async def root():
         "status": "online",
         "features": "Usando funções compartilhadas (DRY principle)",
         "endpoints": {
-            "/predict": "GET - Retorna dados históricos e previsões",
+            "/predictAllTickets": "GET - Retorna dados históricos e previsões de todos os tickets",
             "/health": "GET - Verifica status da API",
             "/model-info": "GET - Informações sobre o modelo",
         },
@@ -215,7 +215,7 @@ async def model_info():
     }
 
 
-@app.get("/predict", response_model=ForecastResponse)
+@app.get("/predictAllTickets", response_model=ForecastResponse)
 async def get_forecast(days: int = 30, historical_days: int = 90):
     """
     Retorna dados históricos e previsões futuras
