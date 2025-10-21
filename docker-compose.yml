@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    container_name: meuapp
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    command: bash -c "python src/services/predict_all_ticketsv2/2_train_all_tickets.py && python controller/tickets_controller.py"
