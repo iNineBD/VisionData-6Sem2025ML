@@ -9,7 +9,7 @@ from datetime import timedelta
 
 
 # para usar no treinamento
-def load_and_prepare(df):
+def load_and_prepare(df: pd.DataFrame):
     """Prepara dados diários de tickets a partir de um DataFrame já carregado"""
     df = df.copy()
 
