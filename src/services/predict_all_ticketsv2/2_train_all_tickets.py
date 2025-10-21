@@ -31,9 +31,9 @@ from src.services.predict_all_ticketsv2.feature_engineering import (
 )
 
 # %%
-mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
-mlflow.set_experiment("all_tickets_v3")
-mlflow.autolog(disable=True)
+# mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+# mlflow.set_experiment("all_tickets_v3")
+# mlflow.autolog(disable=True)
 
 
 # %%
@@ -75,85 +75,85 @@ def split_train_test(df, test_size=0.2):
 
 # %%
 def train_lightgbm(X_train, X_test, y_train, y_test):
-    with mlflow.start_run(run_name="LightGBM"):
-        model = LGBMRegressor(
-            n_estimators=100,
-            learning_rate=0.05,
-            max_depth=5,
-            random_state=42,
-            verbose=-1,
-        )
+    # with mlflow.start_run(run_name="LightGBM"):
+    model = LGBMRegressor(
+        n_estimators=100,
+        learning_rate=0.05,
+        max_depth=5,
+        random_state=42,
+        verbose=-1,
+    )
 
-        model.fit(X_train, y_train)
+    model.fit(X_train, y_train)
 
-        y_pred = model.predict(X_test)
+    y_pred = model.predict(X_test)
 
-        mae = mean_absolute_error(y_test, y_pred)
-        mse = mean_squared_error(y_test, y_pred)
-        r2 = r2_score(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+    mse = mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
 
-        mlflow.log_params({"n_estimators": 100, "learning_rate": 0.05, "max_depth": 5})
-        mlflow.log_metrics({"mae": mae, "mse": mse, "rmse": np.sqrt(mse), "r2": r2})
+    # mlflow.log_params({"n_estimators": 100, "learning_rate": 0.05, "max_depth": 5})
+    # mlflow.log_metrics({"mae": mae, "mse": mse, "rmse": np.sqrt(mse), "r2": r2})
 
-        signature = infer_signature(X_train, model.predict(X_train))
-        input_example = X_train.head(5)
-        mlflow.sklearn.log_model(
-            model,
-            name="model_lightgbm",
-            signature=signature,
-            input_example=input_example,
-        )
+    signature = infer_signature(X_train, model.predict(X_train))
+    input_example = X_train.head(5)
+    # mlflow.sklearn.log_model(
+    #     model,
+    #     name="model_lightgbm",
+    #     signature=signature,
+    #     input_example=input_example,
+    # )
 
-        # salvar modelo localmente (usar path absoluto)
-        models_dir = REPO_ROOT / "models" / "all_tickets_kaggle"
-        models_dir.mkdir(parents=True, exist_ok=True)
-        joblib.dump(model, models_dir / "lightgbm_model.pkl")
+    # salvar modelo localmente (usar path absoluto)
+    models_dir = REPO_ROOT / "models" / "all_tickets_kaggle"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, models_dir / "lightgbm_model.pkl")
 
-        print(f"LightGBM - MAE: {mae:.2f}, MSE: {mse:.2f}, R2: {r2:.4f}")
+    print(f"LightGBM - MAE: {mae:.2f}, MSE: {mse:.2f}, R2: {r2:.4f}")
 
-        return model, y_pred
+    return model, y_pred
 
 
 # %%
 def train_sarimax(df, test_size=0.2):
-    with mlflow.start_run(run_name="SARIMAX"):
-        # Preparar os dados
-        df_sorted = df.sort_values("date")
-        ts = df_sorted.set_index("date")["ticket_count"]
+    # with mlflow.start_run(run_name="SARIMAX"):
+    # Preparar os dados
+    df_sorted = df.sort_values("date")
+    ts = df_sorted.set_index("date")["ticket_count"]
 
-        # Dividir em treino e teste
-        split_idx = int(len(ts) * (1 - test_size))
-        train, test = ts.iloc[:split_idx], ts.iloc[split_idx:]
+    # Dividir em treino e teste
+    split_idx = int(len(ts) * (1 - test_size))
+    train, test = ts.iloc[:split_idx], ts.iloc[split_idx:]
 
-        model = SARIMAX(
-            train,
-            order=(1, 1, 1),
-            seasonal_order=(1, 1, 1, 7),
-            enforce_stationarity=False,
-            enforce_invertibility=False,
-        )
+    model = SARIMAX(
+        train,
+        order=(1, 1, 1),
+        seasonal_order=(1, 1, 1, 7),
+        enforce_stationarity=False,
+        enforce_invertibility=False,
+    )
 
-        fitted = model.fit(disp=False)
+    fitted = model.fit(disp=False)
 
-        y_pred = fitted.forecast(steps=len(test))
+    y_pred = fitted.forecast(steps=len(test))
 
-        mae = mean_absolute_error(test, y_pred)
-        mse = mean_squared_error(test, y_pred)
-        r2 = r2_score(test, y_pred)
+    mae = mean_absolute_error(test, y_pred)
+    mse = mean_squared_error(test, y_pred)
+    r2 = r2_score(test, y_pred)
 
-        mlflow.log_params({"order": "(1,1,1)", "seasonal_order": "(1,1,1,7)"})
-        mlflow.log_metrics({"mae": mae, "mse": mse, "rmse": np.sqrt(mse), "r2": r2})
+    # mlflow.log_params({"order": "(1,1,1)", "seasonal_order": "(1,1,1,7)"})
+    # mlflow.log_metrics({"mae": mae, "mse": mse, "rmse": np.sqrt(mse), "r2": r2})
 
-        mlflow.statsmodels.log_model(fitted, name="model_sarimax")
+    # mlflow.statsmodels.log_model(fitted, name="model_sarimax")
 
-        # salvar modelo localmente
-        models_dir = REPO_ROOT / "models" / "all_tickets_kaggle"
-        models_dir.mkdir(parents=True, exist_ok=True)
-        joblib.dump(fitted, models_dir / "sarimax_model.pkl")
+    # salvar modelo localmente
+    models_dir = REPO_ROOT / "models" / "all_tickets_kaggle"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(fitted, models_dir / "sarimax_model.pkl")
 
-        print(f"SARIMAX - MAE: {mae:.2f}, MSE: {mse:.2f}, R2: {r2:.4f}")
+    print(f"SARIMAX - MAE: {mae:.2f}, MSE: {mse:.2f}, R2: {r2:.4f}")
 
-        return fitted, y_pred
+    return fitted, y_pred
 
 
 # %%
@@ -190,7 +190,8 @@ def train_all_models(df):
 
 
 # %%
-df = load_and_prepare("../../../data/rows.csv")
+df_raw = pd.read_csv(REPO_ROOT / "data" / "rows.csv")
+df = load_and_prepare(df_raw)
 
 results, scaler = train_all_models(df)
 
