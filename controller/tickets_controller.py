@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 from contextlib import asynccontextmanager
+from prophet import Prophet
+from prophet.serialize import model_from_json
 
 # Adicionar caminho do projeto para importar módulos compartilhados
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -42,103 +44,91 @@ class ForecastResponse(BaseModel):
 
 
 # ==================== CONFIGURAÇÕES ====================
-MODEL_PATH = "models/all_tickets_kaggle/lightgbm_model.pkl"
-SCALER_PATH = "models/all_tickets_kaggle/scaler.pkl"
+ACTIVE_MODEL = os.getenv("ACTIVE_MODEL", "prophet").lower()
+
+MODEL_PATHS = {
+    "prophet": "models/all_tickets_kaggle/prophet_model.json",
+}
 DATA_PATH = "data/processed/tickets_with_features.csv"
 
 # Variáveis globais
 loaded_model = None
-loaded_scaler = None
-loaded_data = None
+model_type = ACTIVE_MODEL
 
 
 # ==================== FUNÇÕES DE CARREGAMENTO ====================
-def load_model_and_scaler():
-    """Carrega modelo e scaler salvos"""
-    global loaded_model, loaded_scaler
+def load_resources():
+    """Carrega modelo, scaler e dados históricos com base na configuração."""
+    global loaded_model, loaded_scaler, loaded_data, model_type
+
+    model_path = MODEL_PATHS.get(ACTIVE_MODEL)
+    if not model_path or not os.path.exists(model_path):
+        raise FileNotFoundError(
+            f"Arquivo do modelo para '{ACTIVE_MODEL}' não encontrado em '{model_path}'"
+        )
+
+    print(f"🚀 Carregando modelo '{ACTIVE_MODEL}' de '{model_path}'...")
 
     try:
-        loaded_model = joblib.load(MODEL_PATH)
-        loaded_scaler = joblib.load(SCALER_PATH)
-        print("✓ Modelo e scaler carregados com sucesso")
-    except Exception as e:
-        print(f"✗ Erro ao carregar modelo: {e}")
-        raise
+        if ACTIVE_MODEL == "prophet":
+            with open(model_path, "r") as fin:
+                loaded_model = model_from_json(fin.read())
+            print("✓ Modelo Prophet carregado.")
+        else:
+            raise ValueError(f"Tipo de modelo desconhecido: {ACTIVE_MODEL}")
 
-
-def load_historical_data():
-    """Carrega dados históricos processados"""
-    global loaded_data
-
-    try:
+        # Carregar dados históricos (comum a todos)
         df = pd.read_csv(DATA_PATH)
         df["date"] = pd.to_datetime(df["date"])
         loaded_data = df.sort_values("date")
         print(f"✓ Dados históricos carregados: {len(df)} registros")
+
     except Exception as e:
-        print(f"✗ Erro ao carregar dados: {e}")
+        print(f"✗ Erro fatal durante o carregamento: {e}")
         raise
 
 
 # ==================== FUNÇÕES DE PREVISÃO ====================
-def predict_future(model, scaler, historical_data, days=30):
-    """
-    Gera previsões para os próximos N dias
-    Usa funções compartilhadas - SEM duplicação de código!
-    """
-    # Preparar dados históricos (apenas date e ticket_count)
-    hist_df = historical_data[["date", "ticket_count"]].copy()
-
-    predictions = []
-    last_date = hist_df["date"].max()
-
-    for i in range(1, days + 1):
-        # Data futura
-        future_date = last_date + timedelta(days=i)
-
-        # Criar features usando função compartilhada
-        feature_dict = create_single_day_features(future_date, hist_df)
-
-        # Preparar para predição (ordem garantida automaticamente!)
-        X_future = prepare_features_for_prediction(feature_dict)
-
-        # Padronizar
-        X_future_scaled = scaler.transform(X_future)
-
-        # Prever
-        pred = model.predict(X_future_scaled)[0]
-        pred = max(0, int(round(pred)))
-
-        predictions.append({"date": future_date, "ticket_count": pred})
-
-        # Adicionar predição ao histórico para próxima iteração
-        hist_df = pd.concat(
-            [hist_df, pd.DataFrame([{"date": future_date, "ticket_count": pred}])],
-            ignore_index=True,
+def predict_future(days=30):
+    """Gera previsões para os próximos N dias usando o modelo carregado."""
+    if ACTIVE_MODEL == "prophet":
+        return predict_future_prophet(days)
+    else:
+        raise NotImplementedError(
+            f"Lógica de previsão não implementada para {ACTIVE_MODEL}"
         )
 
-    return pd.DataFrame(predictions)
+
+def predict_future_prophet(days=30):
+    """Gera previsões usando o modelo Prophet."""
+    # CORREÇÃO: Criar um dataframe futuro que começa após a última data histórica
+    last_date = loaded_data["date"].max()
+    future_dates = pd.date_range(start=last_date + timedelta(days=1), periods=days)
+    future_df = pd.DataFrame({"ds": future_dates})
+
+    forecast = loaded_model.predict(future_df)
+
+    # Retorna apenas as previsões futuras
+    predictions = forecast[["ds", "yhat"]]
+    predictions = predictions.rename(columns={"ds": "date", "yhat": "ticket_count"})
+    predictions["ticket_count"] = predictions["ticket_count"].apply(
+        lambda x: max(0, int(round(x)))
+    )
+    return predictions
 
 
 # ==================== LIFECYCLE ====================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gerencia o ciclo de vida da aplicação FastAPI"""
-    # Startup
     print("=" * 60)
     print("🚀 Iniciando API de Previsão de Tickets...")
     print("=" * 60)
-    load_model_and_scaler()
-    load_historical_data()
-
-    feature_cols = get_feature_columns()
-    print(f"📊 Features disponíveis: {len(feature_cols)}")
-    print(f"   Primeiras 5: {feature_cols[:5]}")
+    load_resources()
     print("=" * 60)
     print("✅ API pronta para uso!")
     print("=" * 60)
     yield
-    # Shutdown
     print("\n👋 Encerrando API...")
 
 
@@ -152,69 +142,6 @@ app = FastAPI(
 
 
 # ==================== ENDPOINTS ====================
-@app.get("/")
-async def root():
-    """Endpoint raiz com informações da API"""
-    return {
-        "message": "API de Previsão de Tickets",
-        "version": "2.0.0",
-        "status": "online",
-        "features": "Usando funções compartilhadas (DRY principle)",
-        "endpoints": {
-            "/predictAllTickets": "GET - Retorna dados históricos e previsões de todos os tickets",
-            "/health": "GET - Verifica status da API",
-            "/model-info": "GET - Informações sobre o modelo",
-        },
-    }
-
-
-@app.get("/health")
-async def health_check():
-    """Verifica se o modelo e dados estão carregados"""
-    feature_cols = get_feature_columns()
-
-    return {
-        "status": (
-            "healthy"
-            if all([loaded_model, loaded_scaler, loaded_data is not None])
-            else "unhealthy"
-        ),
-        "model_loaded": loaded_model is not None,
-        "scaler_loaded": loaded_scaler is not None,
-        "data_loaded": loaded_data is not None,
-        "n_features": len(feature_cols),
-        "timestamp": datetime.now().isoformat(),
-    }
-
-
-@app.get("/model-info")
-async def model_info():
-    """Retorna informações sobre o modelo carregado"""
-    if loaded_model is None:
-        raise HTTPException(status_code=500, detail="Modelo não carregado")
-
-    feature_cols = get_feature_columns()
-
-    return {
-        "model_type": type(loaded_model).__name__,
-        "n_features": len(feature_cols),
-        "features": feature_cols,
-        "data_records": len(loaded_data) if loaded_data is not None else 0,
-        "date_range": {
-            "start": (
-                loaded_data["date"].min().strftime("%Y-%m-%d")
-                if loaded_data is not None
-                else None
-            ),
-            "end": (
-                loaded_data["date"].max().strftime("%Y-%m-%d")
-                if loaded_data is not None
-                else None
-            ),
-        },
-    }
-
-
 @app.get("/predictAllTickets", response_model=ForecastResponse)
 async def get_forecast(days: int = 30, historical_days: int = 90):
     """
@@ -225,8 +152,14 @@ async def get_forecast(days: int = 30, historical_days: int = 90):
     - historical_days: número de dias históricos para retornar (padrão: 90)
     """
     # Validações
-    if loaded_model is None or loaded_scaler is None or loaded_data is None:
-        raise HTTPException(status_code=500, detail="Modelo não carregado")
+    model_ok = loaded_model is not None
+    data_ok = loaded_data is not None
+    scaler_ok = True if ACTIVE_MODEL != "lightgbm" else loaded_scaler is not None
+
+    if not all([model_ok, data_ok, scaler_ok]):
+        raise HTTPException(
+            status_code=500, detail="Recursos não carregados corretamente"
+        )
 
     if days <= 0 or days > 365:
         raise HTTPException(status_code=400, detail="Dias deve estar entre 1 e 365")
@@ -241,10 +174,8 @@ async def get_forecast(days: int = 30, historical_days: int = 90):
         # Pegar dados históricos recentes
         historical_df = loaded_data.tail(historical_days).copy()
 
-        # Gerar previsões (usando função simplificada!)
-        predictions_df = predict_future(
-            loaded_model, loaded_scaler, loaded_data, days=days
-        )
+        # Gerar previsões (usando função unificada!)
+        predictions_df = predict_future(days=days)
 
         # Formatar dados históricos
         historical_data = [
@@ -273,27 +204,7 @@ async def get_forecast(days: int = 30, historical_days: int = 90):
         avg_predicted = float(predictions_df["ticket_count"].mean())
 
         return ForecastResponse(
-            historical_data=historical_data,
-            predictions=predictions,
-            model_used="LightGBM",
-            forecast_period_days=days,
-            metadata={
-                "historical_period_days": historical_days,
-                "last_historical_date": historical_df["date"]
-                .max()
-                .strftime("%Y-%m-%d"),
-                "first_prediction_date": predictions_df["date"]
-                .min()
-                .strftime("%Y-%m-%d"),
-                "last_prediction_date": predictions_df["date"]
-                .max()
-                .strftime("%Y-%m-%d"),
-                "total_historical_tickets": total_historical,
-                "avg_historical_tickets": round(avg_historical, 2),
-                "total_predicted_tickets": total_predicted,
-                "avg_predicted_tickets": round(avg_predicted, 2),
-                "generated_at": datetime.now().isoformat(),
-            },
+            historical_data=historical_data, predictions=predictions
         )
 
     except Exception as e:
