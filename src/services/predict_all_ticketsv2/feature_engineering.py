@@ -3,11 +3,13 @@ Funções para engenharia de features em dados diários de tickets
 Para ser usado tanto no treinamento quanto na predição
 """
 
+# %%
 import pandas as pd
 import numpy as np
 from datetime import timedelta
 
 
+# %%
 # para usar no treinamento
 def load_and_prepare(df: pd.DataFrame):
     """Prepara dados diários de tickets a partir de um DataFrame já carregado"""
@@ -24,9 +26,51 @@ def load_and_prepare(df: pd.DataFrame):
 
     daily["ticket_count"] = daily["ticket_count"].astype(int)
 
+    # remover onde quantidade de tickets for maior que 1000
+    daily = daily[daily["ticket_count"] <= 1000]
+
+    # Remover datas específicas e limitar o período
+    datas_remover = [
+        "2017-04-22 00:00:00",
+        "2017-04-23 00:00:00",
+        "2014-03-09 00:00:00",
+        "2014-05-11 00:00:00",
+        "2016-12-24 00:00:00",
+        "2016-12-25 00:00:00",
+        "2016-12-26 00:00:00",
+        "2016-12-11 00:00:00",
+        "2016-11-24 00:00:00",
+        "2017-01-01 00:00:00",
+        "2017-12-24 00:00:00",
+        "2017-12-25 00:00:00",
+        "2012-05-15 00:00:00",
+    ]
+    daily = daily[daily["date"] <= "2019-03-21 00:00:00"]
+    daily = daily[~daily["date"].isin(datas_remover)]
+    # remover com corte de data e quantidade
+    daily = daily[
+        ~((daily["date"] < "2015-12-31 00:00:00") & (daily["ticket_count"] > 700))
+    ]
+
+    # remover outliers usando o método do desvio interquartil (IQR)
+    Q1 = daily["ticket_count"].quantile(0.25)
+    Q3 = daily["ticket_count"].quantile(0.75)
+    IQR = Q3 - Q1
+    lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 + 1.5 * IQR
+    daily = daily[
+        (daily["ticket_count"] >= lower_bound) & (daily["ticket_count"] <= upper_bound)
+    ]
+
+    # remover 2019 pra frente
+    daily = daily[daily["date"] < "2019-01-01 00:00:00"]
+
+    daily.to_csv("../../../data/daily_tickets.csv", index=False)
+
     return daily
 
 
+# %%
 # para usar tanto no treinamento
 def create_time_features(df):
     """Cria features temporais para o modelo"""
