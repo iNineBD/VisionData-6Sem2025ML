@@ -1,0 +1,40 @@
+import pandas as pd
+from flask.cli import load_dotenv
+from src.config import config
+
+def parse_and_prep(csv_path: str) -> pd.DataFrame:
+    df = pd.read_csv(csv_path, dtype=str)
+    df.columns = [c.strip() for c in df.columns]
+    if config.DATE_COL not in df.columns or config.COMPANY_COL not in df.columns:
+        raise ValueError(f"CSV precisa conter colunas '{config.DATE_COL}' e '{config.COMPANY_COL}'")
+    # parse dates
+    df[config.DATE_COL] = pd.to_datetime(df[config.DATE_COL], errors="coerce", dayfirst=False)
+    df = df.dropna(subset=[config.DATE_COL, config.COMPANY_COL])
+    df[config.COMPANY_COL] = df[config.COMPANY_COL].str.strip()
+    df = df[[config.DATE_COL, config.COMPANY_COL]]
+    df[config.DATE_COL] = df[config.DATE_COL].dt.normalize()
+    return df
+
+def make_daily_series(df: pd.DataFrame, company: str) -> pd.Series:
+    sub = df[df[config.COMPANY_COL] == company].copy()
+    if sub.empty:
+        return pd.Series(dtype=float)
+    s = sub.groupby(config.DATE_COL).size().rename("count")
+    idx = pd.date_range(start=s.index.min(), end=s.index.max(), freq="D")
+    s = s.reindex(idx, fill_value=0)
+    s.index.name = config.DATE_COL
+    return s
+
+def create_lgb_features(series: pd.Series, lags=[1,7,14,30], windows=[7,30]) -> pd.DataFrame:
+    df = pd.DataFrame(series).rename(columns={0: "y"}) if isinstance(series, pd.Series) else series.copy()
+    df = df.rename(columns={series.name: "y"}) if series.name else df.rename(columns={0:"y"})
+    for lag in lags:
+        df[f"lag_{lag}"] = df["y"].shift(lag)
+    for w in windows:
+        df[f"roll_mean_{w}"] = df["y"].shift(1).rolling(w).mean()
+        df[f"roll_std_{w}"] = df["y"].shift(1).rolling(w).std().fillna(0)
+    df["dayofweek"] = df.index.dayofweek
+    df["day"] = df.index.day
+    df["month"] = df.index.month
+    df = df.dropna()
+    return df

@@ -9,6 +9,9 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 from contextlib import asynccontextmanager
+from fastapi.responses import JSONResponse
+from src.services.predict_company.app import run_pipeline
+from src.config import config
 
 # Adicionar caminho do projeto para importar módulos compartilhados
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -298,7 +301,16 @@ async def get_forecast(days: int = 30, historical_days: int = 90):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao gerar previsão: {str(e)}")
-
+        
+@app.get("/predict_company", response_model=PredictionResponse)
+def predict_company():
+    """Roda o pipeline do notebook e retorna JSON com os forecasts."""
+    if not os.path.exists(config.CSV_PATH):
+        raise HTTPException(status_code=400, detail=f"CSV not found: {config.CSV_PATH}")
+    res = run_pipeline(config.CSV_PATH)
+    if res is None:
+        raise HTTPException(status_code=500, detail="Erro ao gerar previsões (ver logs do servidor).")
+    return JSONResponse(status_code=200, content=res)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
