@@ -141,6 +141,9 @@ def run_pipeline(csv_path=config.CSV_PATH):
         .index
         .tolist()
     )
+    companies_counts = df[config.COMPANY_COL].value_counts()
+    n_companies = 5
+    top_companies = companies_counts.head(n_companies).index.tolist()
 
     # results = []
     metrics_rows = []
@@ -199,7 +202,7 @@ def run_pipeline(csv_path=config.CSV_PATH):
             "total_next30": total_sar if best_model == "SARIMAX" else total_lgb,
             "pct_increase": inc_sar_pct if best_model == "SARIMAX" else inc_lgb_pct,
             "forecast": (preds_sar if best_model == "SARIMAX" else preds_lgb).to_dict(),
-            "raw_series": series.to_dict(),
+            "raw_series": series.tail(30).to_dict(),
             "y_test": (sar["y_test"] if sar else pd.Series(dtype=float)).to_dict() if sar else {},
             "y_pred_test": (sar["y_pred_test"] if sar else pd.Series(dtype=float)).to_dict() if sar else {},
         }
