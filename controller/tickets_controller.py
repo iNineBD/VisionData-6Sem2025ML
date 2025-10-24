@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from prophet import Prophet
 from prophet.serialize import model_from_json
 from fastapi.responses import JSONResponse
+
 from src.services.predict_company.app import run_pipeline
 from src.config import config
 
@@ -41,9 +42,6 @@ class ForecastResponse(BaseModel):
 
     historical_data: List[PredictionPoint]
     predictions: List[PredictionPoint]
-    model_used: str
-    forecast_period_days: int
-    metadata: Dict[str, Any]
 
 
 class PredictionResponse(BaseModel):
