@@ -4,17 +4,16 @@ import pandas as pd
 import numpy as np
 import os
 import sys
-import seaborn as sns
 import mlflow
 import mlflow.sklearn
 import warnings
 import joblib
+
+from prophet import Prophet
+from prophet.serialize import model_to_json
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from lightgbm import LGBMRegressor
-from statsmodels.tsa.statespace.sarimax import SARIMAX
-from sklearn.preprocessing import StandardScaler
-from mlflow.models.signature import infer_signature
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 # %%
 warnings.filterwarnings("ignore")
@@ -22,213 +21,161 @@ warnings.filterwarnings("ignore")
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-sns.set_theme(style="whitegrid")
-
 # %%
 from src.services.predict_all_ticketsv2.feature_engineering import (
     load_and_prepare,
-    create_time_features,
+    create_time_features,  # Mantido para salvar os dados para a API
 )
 
 # %%
-# mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
-# mlflow.set_experiment("all_tickets_v3")
-# mlflow.autolog(disable=True)
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+mlflow.set_experiment("all_tickets_v3")
+mlflow.autolog(disable=True)
 
 
 # %%
-def split_train_test(df, test_size=0.2):
-    """Divide os dados em conjuntos de treino e teste, padronizando as features."""
+def plot_predictions(train_data, test_data, predictions, model_name):
+    """
+    Plota os dados de treino, os valores reais de teste e os valores previstos.
 
-    # ordenar por data
-    df = df.sort_values("date")
+    Args:
+        train_data (pd.Series): Os dados de treinamento (valores reais).
+        test_data (pd.Series): Os valores reais do conjunto de teste.
+        predictions (pd.Series): Os valores previstos pelo modelo para o período de teste.
+        model_name (str): O nome do modelo para o título do gráfico.
+    """
+    plt.figure(figsize=(15, 7))
 
-    # remover linhas com NaN
-    df_clean = df.dropna().reset_index(drop=True)
-
-    # definindo X e y somente com features importantes
-    X = df_clean.drop(columns=["ticket_count", "date"])
-    y = df_clean["ticket_count"]
-
-    # Dividir em conjuntos de treino e teste
-    split_idx = int(len(df_clean) * (1 - test_size))
-    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
-    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
-
-    # Padronizar as features
-    scaler = StandardScaler()
-    X_train_scaled = pd.DataFrame(
-        # Padronizar as features
-        scaler.fit_transform(X_train),
-        columns=X_train.columns,
-        index=X_train.index,
-    )
-    X_test_scaled = pd.DataFrame(
-        # Padronizar as features
-        scaler.transform(X_test),
-        columns=X_test.columns,
-        index=X_test.index,
+    # Plotar dados de treino
+    plt.plot(
+        train_data.index,
+        train_data,
+        label="Dados de Treino (70%)",
+        color="blue",
+        linestyle="-",
     )
 
-    return X_train_scaled, X_test_scaled, y_train, y_test, scaler
-
-
-# %%
-def train_lightgbm(X_train, X_test, y_train, y_test):
-    # with mlflow.start_run(run_name="LightGBM"):
-    model = LGBMRegressor(
-        n_estimators=100,
-        learning_rate=0.05,
-        max_depth=5,
-        random_state=42,
-        verbose=-1,
+    # Plotar dados de teste (reais)
+    plt.plot(
+        test_data.index,
+        test_data,
+        label="Valores Reais de Teste (30%)",
+        color="green",
+        marker=".",
+        linestyle="-",
     )
 
-    model.fit(X_train, y_train)
-
-    y_pred = model.predict(X_test)
-
-    mae = mean_absolute_error(y_test, y_pred)
-    mse = mean_squared_error(y_test, y_pred)
-    r2 = r2_score(y_test, y_pred)
-
-    # mlflow.log_params({"n_estimators": 100, "learning_rate": 0.05, "max_depth": 5})
-    # mlflow.log_metrics({"mae": mae, "mse": mse, "rmse": np.sqrt(mse), "r2": r2})
-
-    signature = infer_signature(X_train, model.predict(X_train))
-    input_example = X_train.head(5)
-    # mlflow.sklearn.log_model(
-    #     model,
-    #     name="model_lightgbm",
-    #     signature=signature,
-    #     input_example=input_example,
-    # )
-
-    # salvar modelo localmente (usar path absoluto)
-    models_dir = REPO_ROOT / "models" / "all_tickets_kaggle"
-    models_dir.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, models_dir / "lightgbm_model.pkl")
-
-    print(f"LightGBM - MAE: {mae:.2f}, MSE: {mse:.2f}, R2: {r2:.4f}")
-
-    return model, y_pred
-
-
-# %%
-def train_sarimax(df, test_size=0.2):
-    # with mlflow.start_run(run_name="SARIMAX"):
-    # Preparar os dados
-    df_sorted = df.sort_values("date")
-    ts = df_sorted.set_index("date")["ticket_count"]
-
-    # Dividir em treino e teste
-    split_idx = int(len(ts) * (1 - test_size))
-    train, test = ts.iloc[:split_idx], ts.iloc[split_idx:]
-
-    model = SARIMAX(
-        train,
-        order=(1, 1, 1),
-        seasonal_order=(1, 1, 1, 7),
-        enforce_stationarity=False,
-        enforce_invertibility=False,
+    # Plotar previsões
+    plt.plot(
+        test_data.index,
+        predictions,
+        label="Valores Previstos",
+        color="red",
+        marker=".",
+        linestyle="--",
     )
 
-    fitted = model.fit(disp=False)
-
-    y_pred = fitted.forecast(steps=len(test))
-
-    mae = mean_absolute_error(test, y_pred)
-    mse = mean_squared_error(test, y_pred)
-    r2 = r2_score(test, y_pred)
-
-    # mlflow.log_params({"order": "(1,1,1)", "seasonal_order": "(1,1,1,7)"})
-    # mlflow.log_metrics({"mae": mae, "mse": mse, "rmse": np.sqrt(mse), "r2": r2})
-
-    # mlflow.statsmodels.log_model(fitted, name="model_sarimax")
-
-    # salvar modelo localmente
-    models_dir = REPO_ROOT / "models" / "all_tickets_kaggle"
-    models_dir.mkdir(parents=True, exist_ok=True)
-    joblib.dump(fitted, models_dir / "sarimax_model.pkl")
-
-    print(f"SARIMAX - MAE: {mae:.2f}, MSE: {mse:.2f}, R2: {r2:.4f}")
-
-    return fitted, y_pred
+    plt.title(f"Histórico, Teste e Previsão - Modelo {model_name}", fontsize=16)
+    plt.xlabel("Data", fontsize=12)
+    plt.ylabel("Contagem de Tickets", fontsize=12)
+    plt.legend()
+    plt.grid(True)
+    plt.show()
 
 
 # %%
-def train_all_models(df):
-    print("Preparando dados...")
+def train_prophet(df, test_size=0.2):
+    """Treina o modelo Prophet e salva o artefato."""
+    with mlflow.start_run(run_name="Prophet"):
+        # Preparar os dados para o Prophet (requer colunas 'ds' e 'y')
+        df_prophet = df.rename(columns={"date": "ds", "ticket_count": "y"})
 
-    df_features = create_time_features(df)
+        # Dividir em treino e teste
+        split_idx = int(len(df_prophet) * (1 - test_size))
+        train, test = df_prophet.iloc[:split_idx], df_prophet.iloc[split_idx:]
 
-    X_train, X_test, y_train, y_test, scaler = split_train_test(df_features)
+        # Instanciar e treinar o modelo
+        model = Prophet(
+            changepoint_prior_scale=0.5,  # Aumenta a flexibilidade da tendência
+            seasonality_prior_scale=10.0,  # Padrão, mas pode ser ajustado
+            holidays_prior_scale=10.0,  # Aumenta o efeito dos feriados
+            seasonality_mode="multiplicative",  # Tenta um modo de sazonalidade diferente
+        )
 
-    print("\n" + "=" * 50)
-    print("Treinando modelos...")
-    print("=" * 50 + "\n")
+        # Adicionar feriados dos EUA (ajuda a modelar quedas em feriados)
+        model.add_country_holidays(country_name="US")
 
-    results = {}
+        # Adicionar sazonalidade mensal
+        model.add_seasonality(name="monthly", period=30.5, fourier_order=5)
 
-    print("1. LightGBM")
-    lgbm_model, lgbm_pred = train_lightgbm(X_train, X_test, y_train, y_test)
-    results["lightgbm"] = {
-        "model": lgbm_model,
-        "predictions": lgbm_pred,
-        "y_test": y_test,
-    }
+        model.fit(train)
 
-    print("\n2. SARIMAX")
-    sarimax_model, sarimax_pred = train_sarimax(df)
-    results["sarimax"] = {"model": sarimax_model, "predictions": sarimax_pred}
+        # Fazer previsões no conjunto de teste
+        future = test[["ds"]]
+        y_pred = model.predict(future)["yhat"]
+        y_test = test["y"]
 
-    print("\n" + "=" * 50)
-    print("Treinamento concluído!")
-    print("=" * 50)
+        # Calcular métricas
+        mae = mean_absolute_error(y_test, y_pred)
+        mse = mean_squared_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
 
-    return results, scaler
+        mlflow.log_metrics({"mae": mae, "mse": mse, "rmse": np.sqrt(mse), "r2": r2})
+        mlflow.log_params(
+            {
+                "changepoint_prior_scale": 0.5,
+                "seasonality_prior_scale": 10.0,
+                "holidays_prior_scale": 15.0,
+                "seasonality_mode": "multiplicative",
+            }
+        )
+
+        # Plotar os resultados
+        plot_predictions(train["y"], y_test, y_pred, "Prophet Otimizado")
+
+        # Salvar modelo localmente (modelos Prophet são salvos como JSON)
+        models_dir = REPO_ROOT / "models" / "all_tickets_kaggle"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        model_path = models_dir / "prophet_model.json"
+        with open(model_path, "w") as fout:
+            fout.write(model_to_json(model))
+
+        print(f"✓ Modelo Prophet salvo em {model_path}")
+        print(f"Prophet - MAE: {mae:.2f}, MSE: {mse:.2f}, R2: {r2:.4f}")
+
+        return model, y_pred
 
 
 # %%
+def save_processed_data(data):
+    """Salva os dados processados que a API irá consumir."""
+    processed_dir = REPO_ROOT / "data" / "processed"
+    processed_dir.mkdir(parents=True, exist_ok=True)
+
+    output_path = processed_dir / "tickets_with_features.csv"
+    data.to_csv(output_path, index=False)
+
+    print(f"✓ Dados processados salvos em {output_path}")
+
+
+# %%
+# ==================== FLUXO PRINCIPAL ====================
+print("Carregando e preparando os dados...")
 df_raw = pd.read_csv(REPO_ROOT / "data" / "rows.csv")
 df = load_and_prepare(df_raw)
 
-results, scaler = train_all_models(df)
+print("\n" + "=" * 50)
+print("Treinando modelo Prophet...")
+print("=" * 50 + "\n")
 
-lgbm_model = results["lightgbm"]["model"]
-sarimax_model = results["sarimax"]["model"]
+prophet_model, _ = train_prophet(df)
 
+print("\n" + "=" * 50)
+print("Salvando dados para a API...")
+# A API ainda espera este arquivo para carregar o histórico
+df_with_features = create_time_features(df)
+save_processed_data(df_with_features)
 
-# %%
-def save_for_api(scaler, data, output_dir="../../../models/all_tickets_kaggle/"):
-    """
-    Salva apenas o necessário para a API
-    NÃO precisa mais salvar feature_order!
-    """
-    from pathlib import Path
-
-    if output_dir is None:
-        output_dir = REPO_ROOT / "models" / "all_tickets_kaggle"
-    else:
-        output_dir = Path(output_dir)
-
-    processed_dir = REPO_ROOT / "data" / "processed"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    processed_dir.mkdir(parents=True, exist_ok=True)
-
-    # Salvar scaler (NECESSÁRIO)
-    joblib.dump(scaler, output_dir / "scaler.pkl")
-
-    # Salvar dados processados (NECESSÁRIO)
-    data.to_csv(processed_dir / "tickets_with_features.csv", index=False)
-
-    print(f"✓ Scaler salvo em {output_dir / 'scaler.pkl'}")
-    print(f"✓ Dados salvos em {processed_dir / 'tickets_with_features.csv'}")
-
-
-# %%
-save_for_api(
-    scaler,
-    create_time_features(df),
-    output_dir=REPO_ROOT / "models" / "all_tickets_kaggle",
-)
+print("\n" + "=" * 50)
+print("Treinamento concluído com sucesso!")
+print("=" * 50)
