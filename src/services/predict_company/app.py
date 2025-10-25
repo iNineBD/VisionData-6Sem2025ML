@@ -22,7 +22,7 @@ from src.utils.data_processing import parse_and_prep, make_daily_series, create_
 
 warnings.filterwarnings("ignore")
 
-FORECAST_DAYS=90
+FORECAST_DAYS=30
 SEASONAL_PERIOD=7
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -244,7 +244,6 @@ def run_pipeline(csv_path=config.CSV_PATH):
             model_path = os.path.join(models_dir, f"{comp}_{best_model}.pkl")
             try:
                 joblib.dump(best["model"], model_path)
-                print(f"💾 Modelo salvo: {model_path}")
             except Exception as e:
                 print(f"⚠️ Erro ao salvar modelo: {e}")
 
@@ -278,6 +277,7 @@ def run_pipeline(csv_path=config.CSV_PATH):
         final_summary.append({
             "company": comp,
             **v,
+            "total_next30": int(round(v.get("total_next30"))) if v.get("total_next30") is not None and not pd.isna(v.get("total_next30")) else None,
             "forecast": serialize_series_dict(v.get("forecast")),
             "raw_series": serialize_series_dict(v.get("raw_series")),
         })
