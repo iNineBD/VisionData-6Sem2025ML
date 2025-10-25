@@ -11,6 +11,9 @@ from src.config import config
 from typing import Dict, Any
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import warnings
+import joblib
+from pathlib import Path
+
 
 # Model libs
 from statsmodels.tsa.statespace.sarimax import SARIMAX
@@ -19,9 +22,12 @@ from src.utils.data_processing import parse_and_prep, make_daily_series, create_
 
 warnings.filterwarnings("ignore")
 
-FORECAST_DAYS=30
+FORECAST_DAYS=90
 SEASONAL_PERIOD=7
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
+models_dir = REPO_ROOT / "models" / "predict_company_tickets"
+models_dir.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title="Predição Tickets - SARIMAX + LightGBM")
 
 
@@ -134,118 +140,208 @@ def train_sarimax(series: pd.Series, seasonal_period=SEASONAL_PERIOD, forecast_d
 
 def run_pipeline(csv_path=config.CSV_PATH):
     df = parse_and_prep(csv_path)
-    top_companies = (
-        df[config.COMPANY_COL]
-        .value_counts()
-        .head(5)
-        .index
-        .tolist()
-    )
-    companies_counts = df[config.COMPANY_COL].value_counts()
-    n_companies = 5
-    top_companies = companies_counts.head(n_companies).index.tolist()
-
-    # results = []
-    metrics_rows = []
+    top_companies = df[config.COMPANY_COL].value_counts().head(5).index.tolist()
     forecasts_summary = {}
+
     for comp in top_companies:
+        existing_models = [
+            f for f in os.listdir(models_dir)
+            if f.startswith(comp) and f.endswith(".pkl")
+        ]
+
+        if existing_models:
+            model_file = os.path.join(models_dir, existing_models[0])
+            model_name = "SARIMAX" if "SARIMAX" in model_file else "LightGBM"
+            series = make_daily_series(df, comp)
+            if series.empty or len(series) < 50:
+                continue
+
+            forecast_days = FORECAST_DAYS
+            future_index = pd.date_range(
+                start=series.index[-1] + pd.Timedelta(days=1),
+                periods=forecast_days,
+                freq="D"
+            )
+
+            model = joblib.load(model_file)
+            if model_name == "LightGBM":
+                tmp_series = series.copy()
+                preds = []
+                for dt in future_index:
+                    feats = {}
+                    for lag in [1, 7, 14, 30]:
+                        feats[f"lag_{lag}"] = tmp_series.get(dt - pd.Timedelta(days=lag), 0)
+                    for w in [7, 30]:
+                        vals = [tmp_series.get(dt - pd.Timedelta(days=i), 0) for i in range(1, w + 1)]
+                        feats[f"roll_mean_{w}"] = np.mean(vals)
+                        feats[f"roll_std_{w}"] = np.std(vals)
+                    feats["dayofweek"] = dt.dayofweek
+                    feats["day"] = dt.day
+                    feats["month"] = dt.month
+                    Xf = pd.DataFrame([feats])
+                    p = model.predict(Xf)[0]
+                    p = max(0, p)
+                    preds.append(p)
+                    tmp_series[dt] = p
+                preds = pd.Series(preds, index=future_index)
+            else:
+                preds = model.get_forecast(steps=forecast_days).predicted_mean
+                preds.index = future_index
+
+            total_pred = float(preds.sum())
+            last_30_sum = float(series.iloc[-30:].sum())
+            pct_increase = (
+                ((total_pred - last_30_sum) / last_30_sum * 100)
+                if last_30_sum > 0
+                else None
+            )
+
+            forecasts_summary[comp] = {
+                "best_model": model_name,
+                "reason": "Modelo existente reutilizado",
+                "mse": None,
+                "mae": None,
+                "rmse": None,
+                "r2": None,
+                "total_next30": total_pred,
+                "pct_increase": pct_increase,
+                "forecast": preds.to_dict(),
+                "raw_series": series.tail(30).to_dict(),
+            }
+            continue  
+
         series = make_daily_series(df, comp)
-        if series.empty or len(series) < 50: 
+        if series.empty or len(series) < 50:
             continue
+
         sar = train_sarimax(series, seasonal_period=SEASONAL_PERIOD)
         lgbm = train_lightgbm(series)
 
-        # Predições e totais previstos
         preds_sar = sar["preds"] if sar else pd.Series(dtype=float)
         preds_lgb = lgbm["preds"] if lgbm else pd.Series(dtype=float)
 
         total_sar = float(preds_sar.sum()) if not preds_sar.empty else None
         total_lgb = float(preds_lgb.sum()) if not preds_lgb.empty else None
-
-        # Últimos 30 dias
-        last_30_start = series.index[-1] - pd.Timedelta(days=29)
-        last_30_sum = float(series.loc[last_30_start:series.index[-1]].sum())
-
-        inc_sar_pct = (
-            ((total_sar - last_30_sum) / last_30_sum * 100)
-            if (total_sar is not None and last_30_sum > 0)
-            else None
-        )
-        inc_lgb_pct = (
-            ((total_lgb - last_30_sum) / last_30_sum * 100)
-            if (total_lgb is not None and last_30_sum > 0)
-            else None
-        )
+        last_30_sum = float(series.iloc[-30:].sum())
 
         def get_score(m):
             if not m:
-                return float("inf")  # penaliza modelo inexistente
-            return (m["mse"] + m["mae"]) / 2 - m["r2"]  # combina erro e r2 (quanto menor, melhor)
+                return float("inf")
+            return (m["mse"] + m["mae"]) / 2 - m["r2"]
 
         score_sar = get_score(sar)
         score_lgb = get_score(lgbm)
+
         if score_sar < score_lgb:
             best_model = "SARIMAX"
             best = sar
-            reason = "SARIMAX escolhido por menor MSE/MAE e maior R²"
         else:
             best_model = "LightGBM"
             best = lgbm
-            reason = "LightGBM escolhido por menor MSE/MAE e maior R²"
-        best_info = {
+
+
+        if best and best.get("model"):
+            model_path = os.path.join(models_dir, f"{comp}_{best_model}.pkl")
+            try:
+                joblib.dump(best["model"], model_path)
+                print(f"💾 Modelo salvo: {model_path}")
+            except Exception as e:
+                print(f"⚠️ Erro ao salvar modelo: {e}")
+
+        forecasts_summary[comp] = {
             "best_model": best_model,
-            "reason": reason,
-            "mse": best["mse"] if best else None,
-            "mae": best["mae"] if best else None,
-            "rmse": best["rmse"] if best else None,
-            "r2": best["r2"] if best else None,
+            "reason": "Treinado novo modelo",
+            "mse": best.get("mse") if best else None,
+            "mae": best.get("mae") if best else None,
+            "rmse": best.get("rmse") if best else None,
+            "r2": best.get("r2") if best else None,
             "total_next30": total_sar if best_model == "SARIMAX" else total_lgb,
-            "pct_increase": inc_sar_pct if best_model == "SARIMAX" else inc_lgb_pct,
+            "pct_increase": (
+                ((total_sar - last_30_sum) / last_30_sum * 100)
+                if (best_model == "SARIMAX" and last_30_sum > 0)
+                else ((total_lgb - last_30_sum) / last_30_sum * 100)
+                if last_30_sum > 0 else None
+            ),
             "forecast": (preds_sar if best_model == "SARIMAX" else preds_lgb).to_dict(),
             "raw_series": series.tail(30).to_dict(),
-            "y_test": (sar["y_test"] if sar else pd.Series(dtype=float)).to_dict() if sar else {},
-            "y_pred_test": (sar["y_pred_test"] if sar else pd.Series(dtype=float)).to_dict() if sar else {},
         }
-        forecasts_summary[comp] = best_info
-        metrics_rows.append({
-            "company": comp,
-            "last_30_sum": last_30_sum,
-            "best_model": best_model,
-            **{f"sar_{k}": sar.get(k) if sar else None for k in ["mse", "mae", "rmse", "r2"]},
-            **{f"lgb_{k}": lgbm.get(k) if lgbm else None for k in ["mse", "mae", "rmse", "r2"]}
-        })
 
-    # Salva métricas CSV
-    metrics_df = pd.DataFrame(metrics_rows)
-    metrics_df.to_csv(config.METRICS_CSV, index=False)
     final_summary = []
     for comp, v in forecasts_summary.items():
         def serialize_series_dict(d):
             return {
-                str(k): float(vv) 
-                for k, vv in (d or {}).items() 
+                str(k): (max(0, int(round(vv))))
+                for k, vv in (d or {}).items()
                 if not pd.isna(vv)
             }
-        
+
         final_summary.append({
             "company": comp,
-            "best_model": v.get("best_model"),
-            "mse": v.get("mse"),
-            "mae": v.get("mae"),
-            "rmse": v.get("rmse"),
-            "r2": v.get("r2"),
-            "total_next30": v.get("total_next30"),
-            "pct_increase": v.get("pct_increase"),
+            **v,
             "forecast": serialize_series_dict(v.get("forecast")),
             "raw_series": serialize_series_dict(v.get("raw_series")),
-            "y_test": serialize_series_dict(v.get("y_test")),
-            "y_pred_test": serialize_series_dict(v.get("y_pred_test")),
         })
-    res = {
-        "best_models_summary": final_summary
-    }
 
+    res = {"best_models_summary": final_summary}
     return res
+
+def load_and_predict(csv_path=config.CSV_PATH, forecast_days=FORECAST_DAYS, model_dir="models"):
+    """Carrega os modelos salvos e gera previsões rápidas sem reentreinar."""
+
+    df = parse_and_prep(csv_path)
+    top_companies = df[config.COMPANY_COL].value_counts().head(5).index.tolist()
+
+    results = {}
+    for comp in top_companies:
+        model_files = [f for f in os.listdir(model_dir) if f.startswith(comp)]
+        if not model_files:
+            continue
+
+        model_file = os.path.join(model_dir, model_files[0])
+        model = joblib.load(model_file)
+
+        series = make_daily_series(df, comp)
+        if series.empty:
+            continue
+
+        future_index = pd.date_range(
+            start=series.index[-1] + pd.Timedelta(days=1),
+            periods=forecast_days,
+            freq="D"
+        )
+
+        if "LightGBM" in model_file:
+            tmp_series = series.copy()
+            preds = []
+            for dt in future_index:
+                feats = {}
+                for lag in [1, 7, 14, 30]:
+                    feats[f"lag_{lag}"] = tmp_series.get(dt - pd.Timedelta(days=lag), 0)
+                for w in [7, 30]:
+                    vals = [tmp_series.get(dt - pd.Timedelta(days=i), 0) for i in range(1, w + 1)]
+                    feats[f"roll_mean_{w}"] = np.mean(vals)
+                    feats[f"roll_std_{w}"] = np.std(vals)
+                feats["dayofweek"] = dt.dayofweek
+                feats["day"] = dt.day
+                feats["month"] = dt.month
+
+                Xf = pd.DataFrame([feats])
+                p = model.predict(Xf)[0]
+                p = max(0, p)
+                preds.append(p)
+                tmp_series[dt] = p
+            preds = pd.Series(preds, index=future_index)
+
+        elif "SARIMAX" in model_file:
+            preds = model.get_forecast(steps=forecast_days).predicted_mean
+            preds.index = future_index
+
+        results[comp] = preds.to_dict()
+
+    return results
+
+
+
 # @app.get("/download_metrics")
 # def download_metrics():
 #     if not os.path.exists(METRICS_CSV):

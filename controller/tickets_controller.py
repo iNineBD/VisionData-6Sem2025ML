@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from prophet import Prophet
 from prophet.serialize import model_from_json
 from fastapi.responses import JSONResponse
+import logging
 
 from src.services.predict_company.app import run_pipeline
 from src.config import config
@@ -220,16 +221,29 @@ async def get_forecast(days: int = 30, historical_days: int = 90):
 
 @app.get("/predict_company", response_model=PredictionResponse)
 def predict_company():
-    """Roda o pipeline do notebook e retorna JSON com os forecasts."""
-    if not os.path.exists(config.CSV_PATH):
-        raise HTTPException(status_code=400, detail=f"CSV not found: {config.CSV_PATH}")
-    res = run_pipeline(config.CSV_PATH)
-    if res is None:
-        raise HTTPException(
-            status_code=500, detail="Erro ao gerar previsões (ver logs do servidor)."
-        )
-    return JSONResponse(status_code=200, content=res)
+    """Executa o pipeline e retorna as previsões das empresas selecionadas."""
+    try:
+        if not os.path.exists(config.CSV_PATH):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Arquivo CSV não encontrado: {config.CSV_PATH}"
+            )
+        res = run_pipeline(config.CSV_PATH)
+        if not res or not res.get("best_models_summary"):
+            raise HTTPException(
+                status_code=500,
+                detail="Nenhuma previsão gerada. Verifique os dados ou os logs do servidor."
+            )
+        return JSONResponse(status_code=200, content=res)
 
+    except HTTPException as e:
+        raise e 
+    except Exception as e:
+        logging.exception("Erro inesperado ao gerar previsões")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro inesperado ao gerar previsões: {str(e)}"
+        )
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
