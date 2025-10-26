@@ -19,6 +19,7 @@ CI:
 
 ## Estrutura de Diretórios para Projeto de Machine Learning
 
+```sh
 ├── .github/                      # Configurações GitHub Actions (CI/CD)
 │   └── workflows/
 │       ├── cd.yml                # Pipeline de Continuous Deployment
@@ -38,3 +39,4 @@ CI:
 ├── requirements.txt              # Dependências Python do projeto
 ├── setup.py                      # Configuração de empacotamento do projeto
 └── sonar-project.properties      # Configuração SonarQube para análise de código
+```
