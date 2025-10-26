@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from prophet import Prophet
 from prophet.serialize import model_from_json
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 # Adicionar caminho do projeto para importar módulos compartilhados
@@ -62,7 +63,6 @@ DATA_PATH = "data/processed/tickets_with_features.csv"
 # Variáveis globais
 loaded_model = None
 model_type = ACTIVE_MODEL
-
 
 # ==================== FUNÇÕES DE CARREGAMENTO ====================
 def load_resources():
@@ -146,6 +146,20 @@ app = FastAPI(
     description="API para previsão de quantidade de tickets usando features compartilhadas",
     version="2.0.0",
     lifespan=lifespan,
+)
+
+# ==================== CORS ====================
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
