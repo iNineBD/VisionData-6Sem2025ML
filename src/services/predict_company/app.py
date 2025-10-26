@@ -197,11 +197,11 @@ def run_pipeline(csv_path: str, group_col: str):
             forecasts_summary[item] = {
                 "best_model": model_name,
                 "reason": "Modelo existente reutilizado",
-                "mse": None, "mae": None, "rmse": None, "r2": None,
+                # "mse": None, "mae": None, "rmse": None, "r2": None,
                 "total_next30": total_pred,
                 "pct_increase": pct_increase,
                 "forecast": preds.to_dict(),
-                "raw_series": series.tail(30).to_dict(),
+                "raw_series": series.tail(60).to_dict(),
             }
             continue
 
@@ -234,12 +234,12 @@ def run_pipeline(csv_path: str, group_col: str):
         forecasts_summary[item] = {
             "best_model": best_model,
             "reason": "Treinado novo modelo",
-            "mse": best.get("mse"), "mae": best.get("mae"),
-            "rmse": best.get("rmse"), "r2": best.get("r2"),
+            # "mse": best.get("mse"), "mae": best.get("mae"),
+            # "rmse": best.get("rmse"), "r2": best.get("r2"),
             "total_next30": total_pred,
             "pct_increase": ((total_pred - last_30_sum) / last_30_sum * 100) if last_30_sum > 0 else None,
             "forecast": preds.to_dict(),
-            "raw_series": series.tail(30).to_dict(),
+            "raw_series": series.tail(60).to_dict(),
         }
 
     def serialize_series_dict(d):
