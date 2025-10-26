@@ -138,29 +138,31 @@ def train_sarimax(series: pd.Series, seasonal_period=SEASONAL_PERIOD, forecast_d
     except Exception as e:
         return None
 
-def run_pipeline(csv_path=config.CSV_PATH):
-    df = parse_and_prep(csv_path)
-    top_companies = df[config.COMPANY_COL].value_counts().head(5).index.tolist()
+def run_pipeline(csv_path: str, group_col: str):
+    """Executa o pipeline de previsão para a coluna especificada (empresa ou produto)."""
+
+    models_dir = REPO_ROOT / "models" / f"predict_{group_col.lower()}_tickets"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    df = parse_and_prep(csv_path, group_col)
+    top_values = df[group_col].value_counts().head(5).index.tolist()
     forecasts_summary = {}
 
-    for comp in top_companies:
+    for item in top_values:
         existing_models = [
             f for f in os.listdir(models_dir)
-            if f.startswith(comp) and f.endswith(".pkl")
+            if f.startswith(item) and f.endswith(".pkl")
         ]
-
         if existing_models:
             model_file = os.path.join(models_dir, existing_models[0])
             model_name = "SARIMAX" if "SARIMAX" in model_file else "LightGBM"
-            series = make_daily_series(df, comp)
+            series = make_daily_series(df, item, group_col)
             if series.empty or len(series) < 50:
                 continue
 
             forecast_days = FORECAST_DAYS
             future_index = pd.date_range(
                 start=series.index[-1] + pd.Timedelta(days=1),
-                periods=forecast_days,
-                freq="D"
+                periods=forecast_days, freq="D"
             )
 
             model = joblib.load(model_file)
@@ -190,100 +192,70 @@ def run_pipeline(csv_path=config.CSV_PATH):
 
             total_pred = float(preds.sum())
             last_30_sum = float(series.iloc[-30:].sum())
-            pct_increase = (
-                ((total_pred - last_30_sum) / last_30_sum * 100)
-                if last_30_sum > 0
-                else None
-            )
+            pct_increase = ((total_pred - last_30_sum) / last_30_sum * 100) if last_30_sum > 0 else None
 
-            forecasts_summary[comp] = {
+            forecasts_summary[item] = {
                 "best_model": model_name,
                 "reason": "Modelo existente reutilizado",
-                "mse": None,
-                "mae": None,
-                "rmse": None,
-                "r2": None,
+                "mse": None, "mae": None, "rmse": None, "r2": None,
                 "total_next30": total_pred,
                 "pct_increase": pct_increase,
                 "forecast": preds.to_dict(),
                 "raw_series": series.tail(30).to_dict(),
             }
-            continue  
+            continue
 
-        series = make_daily_series(df, comp)
+        series = make_daily_series(df, item, group_col)
         if series.empty or len(series) < 50:
             continue
 
         sar = train_sarimax(series, seasonal_period=SEASONAL_PERIOD)
         lgbm = train_lightgbm(series)
 
-        preds_sar = sar["preds"] if sar else pd.Series(dtype=float)
-        preds_lgb = lgbm["preds"] if lgbm else pd.Series(dtype=float)
-
-        total_sar = float(preds_sar.sum()) if not preds_sar.empty else None
-        total_lgb = float(preds_lgb.sum()) if not preds_lgb.empty else None
-        last_30_sum = float(series.iloc[-30:].sum())
-
         def get_score(m):
             if not m:
                 return float("inf")
             return (m["mse"] + m["mae"]) / 2 - m["r2"]
 
-        score_sar = get_score(sar)
-        score_lgb = get_score(lgbm)
-
-        if score_sar < score_lgb:
-            best_model = "SARIMAX"
-            best = sar
-        else:
-            best_model = "LightGBM"
-            best = lgbm
-
+        score_sar, score_lgb = get_score(sar), get_score(lgbm)
+        best_model, best = ("SARIMAX", sar) if score_sar < score_lgb else ("LightGBM", lgbm)
 
         if best and best.get("model"):
-            model_path = os.path.join(models_dir, f"{comp}_{best_model}.pkl")
+            model_path = os.path.join(models_dir, f"{item}_{best_model}.pkl")
             try:
                 joblib.dump(best["model"], model_path)
             except Exception as e:
                 print(f"⚠️ Erro ao salvar modelo: {e}")
 
-        forecasts_summary[comp] = {
+        preds = best.get("preds", pd.Series(dtype=float))
+        total_pred = float(preds.sum()) if not preds.empty else None
+        last_30_sum = float(series.iloc[-30:].sum())
+
+        forecasts_summary[item] = {
             "best_model": best_model,
             "reason": "Treinado novo modelo",
-            "mse": best.get("mse") if best else None,
-            "mae": best.get("mae") if best else None,
-            "rmse": best.get("rmse") if best else None,
-            "r2": best.get("r2") if best else None,
-            "total_next30": total_sar if best_model == "SARIMAX" else total_lgb,
-            "pct_increase": (
-                ((total_sar - last_30_sum) / last_30_sum * 100)
-                if (best_model == "SARIMAX" and last_30_sum > 0)
-                else ((total_lgb - last_30_sum) / last_30_sum * 100)
-                if last_30_sum > 0 else None
-            ),
-            "forecast": (preds_sar if best_model == "SARIMAX" else preds_lgb).to_dict(),
+            "mse": best.get("mse"), "mae": best.get("mae"),
+            "rmse": best.get("rmse"), "r2": best.get("r2"),
+            "total_next30": total_pred,
+            "pct_increase": ((total_pred - last_30_sum) / last_30_sum * 100) if last_30_sum > 0 else None,
+            "forecast": preds.to_dict(),
             "raw_series": series.tail(30).to_dict(),
         }
 
-    final_summary = []
-    for comp, v in forecasts_summary.items():
-        def serialize_series_dict(d):
-            return {
-                str(k): (max(0, int(round(vv))))
-                for k, vv in (d or {}).items()
-                if not pd.isna(vv)
-            }
+    def serialize_series_dict(d):
+        return {str(k): int(round(vv)) for k, vv in (d or {}).items() if not pd.isna(vv)}
 
-        final_summary.append({
-            "company": comp,
+    final_summary = [
+        {
+            group_col.lower(): item,
             **v,
-            "total_next30": int(round(v.get("total_next30"))) if v.get("total_next30") is not None and not pd.isna(v.get("total_next30")) else None,
+            "total_next30": int(round(v["total_next30"])) if v.get("total_next30") else None,
             "forecast": serialize_series_dict(v.get("forecast")),
             "raw_series": serialize_series_dict(v.get("raw_series")),
-        })
-
-    res = {"best_models_summary": final_summary}
-    return res
+        }
+        for item, v in forecasts_summary.items()
+    ]
+    return {"best_models_summary": final_summary}
 
 def load_and_predict(csv_path=config.CSV_PATH, forecast_days=FORECAST_DAYS, model_dir="models"):
     """Carrega os modelos salvos e gera previsões rápidas sem reentreinar."""
