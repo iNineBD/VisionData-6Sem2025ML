@@ -39,3 +39,23 @@ def create_lgb_features(series: pd.Series, lags=[1,7,14,30], windows=[7,30]) -> 
     df["month"] = df.index.month
     df = df.dropna()
     return df
+
+def _format_series_dict(d):
+    """
+    Converte um dict com chaves de datas para:
+      - chave no formato 'AAAA/MM/DD'
+      - valor como inteiro (round, >= 0)
+    Ignora valores NaN.
+    """
+    out = {}
+    for k, vv in (d or {}).items():
+        if pd.isna(vv):
+            continue
+        # formatar a chave como data se possível
+        try:
+            dt = pd.to_datetime(k)
+            key = dt.strftime("%Y-%m-%d")
+        except Exception:
+            key = str(k)
+        out[key] = max(0, int(round(vv)))
+    return out

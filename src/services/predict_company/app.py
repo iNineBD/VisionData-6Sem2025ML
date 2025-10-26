@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 import uvicorn
 from src.config import config
+from src.utils.data_processing import _format_series_dict   
 from typing import Dict, Any
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import warnings
@@ -196,12 +197,12 @@ def run_pipeline(csv_path: str, group_col: str):
 
             forecasts_summary[item] = {
                 "best_model": model_name,
-                "reason": "Modelo existente reutilizado",
+                # "reason": "Modelo existente reutilizado",
                 # "mse": None, "mae": None, "rmse": None, "r2": None,
                 "total_next30": total_pred,
-                "pct_increase": pct_increase,
-                "forecast": preds.to_dict(),
+                # "pct_increase": pct_increase,
                 "raw_series": series.tail(60).to_dict(),
+                "forecast": preds.to_dict(),
             }
             continue
 
@@ -233,25 +234,24 @@ def run_pipeline(csv_path: str, group_col: str):
 
         forecasts_summary[item] = {
             "best_model": best_model,
-            "reason": "Treinado novo modelo",
+            # "reason": "Treinado novo modelo",
             # "mse": best.get("mse"), "mae": best.get("mae"),
             # "rmse": best.get("rmse"), "r2": best.get("r2"),
             "total_next30": total_pred,
-            "pct_increase": ((total_pred - last_30_sum) / last_30_sum * 100) if last_30_sum > 0 else None,
-            "forecast": preds.to_dict(),
+            # "pct_increase": ((total_pred - last_30_sum) / last_30_sum * 100) if last_30_sum > 0 else None,
             "raw_series": series.tail(60).to_dict(),
-        }
+            "forecast": preds.to_dict(),
 
-    def serialize_series_dict(d):
-        return {str(k): int(round(vv)) for k, vv in (d or {}).items() if not pd.isna(vv)}
+        }
 
     final_summary = [
         {
             group_col.lower(): item,
             **v,
             "total_next30": int(round(v["total_next30"])) if v.get("total_next30") else None,
-            "forecast": serialize_series_dict(v.get("forecast")),
-            "raw_series": serialize_series_dict(v.get("raw_series")),
+            "raw_series": _format_series_dict(v.get("raw_series")),
+            "forecast": _format_series_dict(v.get("forecast"))
+
         }
         for item, v in forecasts_summary.items()
     ]
@@ -309,6 +309,7 @@ def load_and_predict(csv_path=config.CSV_PATH, forecast_days=FORECAST_DAYS, mode
             preds.index = future_index
 
         results[comp] = preds.to_dict()
+        results[comp] = _format_series_dict(preds.to_dict())
 
     return results
 
