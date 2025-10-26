@@ -7,6 +7,9 @@ Para ser usado tanto no treinamento quanto na predição
 import pandas as pd
 import numpy as np
 from datetime import timedelta
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 # %%
@@ -65,7 +68,7 @@ def load_and_prepare(df: pd.DataFrame):
     # remover 2019 pra frente
     daily = daily[daily["date"] < "2019-01-01 00:00:00"]
 
-    daily.to_csv("../../../data/daily_tickets.csv", index=False)
+    daily.to_csv(REPO_ROOT / "data" / "daily_tickets.csv", index=False)
 
     return daily
 

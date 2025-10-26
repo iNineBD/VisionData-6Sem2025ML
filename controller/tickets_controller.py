@@ -14,12 +14,12 @@ from prophet.serialize import model_from_json
 from fastapi.responses import JSONResponse
 import logging
 
-from src.services.predict_company.app import run_pipeline
-from src.config import config
-
 # Adicionar caminho do projeto para importar módulos compartilhados
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, project_root)
+
+from src.services.predict_company.app import run_pipeline
+from src.config import config
 
 # Importar funções compartilhadas
 from src.services.predict_all_ticketsv2.feature_engineering import (
@@ -225,52 +225,53 @@ def predict_product():
     try:
         if not os.path.exists(config.CSV_PATH):
             raise HTTPException(
-                status_code=400,
-                detail=f"Arquivo CSV não encontrado: {config.CSV_PATH}"
+                status_code=400, detail=f"Arquivo CSV não encontrado: {config.CSV_PATH}"
             )
         # Chama o pipeline para a coluna PRODUCT_COL
-        res = run_pipeline(config.CSV_PATH, config.COMPANY_COL) 
+        res = run_pipeline(config.CSV_PATH, config.COMPANY_COL)
         if not res:
             raise HTTPException(
                 status_code=500,
-                detail="Nenhuma previsão gerada. Verifique os dados ou os logs do servidor."
+                detail="Nenhuma previsão gerada. Verifique os dados ou os logs do servidor.",
             )
         return JSONResponse(status_code=200, content=res)
 
     except HTTPException as e:
-        raise e 
+        raise e
     except Exception as e:
         logging.exception("Erro inesperado ao gerar previsões de produto")
         raise HTTPException(
             status_code=500,
-            detail=f"Erro inesperado ao gerar previsões de produto: {str(e)}"
+            detail=f"Erro inesperado ao gerar previsões de produto: {str(e)}",
         )
-    
+
+
 @app.get("/predict_product", response_model=PredictionResponse)
 def predict_product():
     """Executa o pipeline e retorna as previsões dos produtos selecionados."""
     try:
         if not os.path.exists(config.CSV_PATH):
             raise HTTPException(
-                status_code=400,
-                detail=f"Arquivo CSV não encontrado: {config.CSV_PATH}"
+                status_code=400, detail=f"Arquivo CSV não encontrado: {config.CSV_PATH}"
             )
         # Chama o pipeline para a coluna PRODUCT_COL
-        res = run_pipeline(config.CSV_PATH, config.PRODUCT_COL) 
+        res = run_pipeline(config.CSV_PATH, config.PRODUCT_COL)
         if not res:
             raise HTTPException(
                 status_code=500,
-                detail="Nenhuma previsão gerada. Verifique os dados ou os logs do servidor."
+                detail="Nenhuma previsão gerada. Verifique os dados ou os logs do servidor.",
             )
         return JSONResponse(status_code=200, content=res)
 
     except HTTPException as e:
-        raise e 
+        raise e
     except Exception as e:
         logging.exception("Erro inesperado ao gerar previsões de produto")
         raise HTTPException(
             status_code=500,
-            detail=f"Erro inesperado ao gerar previsões de produto: {str(e)}"
+            detail=f"Erro inesperado ao gerar previsões de produto: {str(e)}",
         )
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
