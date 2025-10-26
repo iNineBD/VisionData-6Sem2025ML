@@ -220,16 +220,17 @@ async def get_forecast(days: int = 30, historical_days: int = 90):
 
 
 @app.get("/predict_company", response_model=PredictionResponse)
-def predict_company():
-    """Executa o pipeline e retorna as previsões das empresas selecionadas."""
+def predict_product():
+    """Executa o pipeline e retorna as previsões dos produtos selecionados."""
     try:
         if not os.path.exists(config.CSV_PATH):
             raise HTTPException(
                 status_code=400,
                 detail=f"Arquivo CSV não encontrado: {config.CSV_PATH}"
             )
-        res = run_pipeline(config.CSV_PATH)
-        if not res or not res.get("best_models_summary"):
+        # Chama o pipeline para a coluna PRODUCT_COL
+        res = run_pipeline(config.CSV_PATH, config.COMPANY_COL) 
+        if not res:
             raise HTTPException(
                 status_code=500,
                 detail="Nenhuma previsão gerada. Verifique os dados ou os logs do servidor."
@@ -239,11 +240,37 @@ def predict_company():
     except HTTPException as e:
         raise e 
     except Exception as e:
-        logging.exception("Erro inesperado ao gerar previsões")
+        logging.exception("Erro inesperado ao gerar previsões de produto")
         raise HTTPException(
             status_code=500,
-            detail=f"Erro inesperado ao gerar previsões: {str(e)}"
+            detail=f"Erro inesperado ao gerar previsões de produto: {str(e)}"
         )
+    
+@app.get("/predict_product", response_model=PredictionResponse)
+def predict_product():
+    """Executa o pipeline e retorna as previsões dos produtos selecionados."""
+    try:
+        if not os.path.exists(config.CSV_PATH):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Arquivo CSV não encontrado: {config.CSV_PATH}"
+            )
+        # Chama o pipeline para a coluna PRODUCT_COL
+        res = run_pipeline(config.CSV_PATH, config.PRODUCT_COL) 
+        if not res:
+            raise HTTPException(
+                status_code=500,
+                detail="Nenhuma previsão gerada. Verifique os dados ou os logs do servidor."
+            )
+        return JSONResponse(status_code=200, content=res)
 
+    except HTTPException as e:
+        raise e 
+    except Exception as e:
+        logging.exception("Erro inesperado ao gerar previsões de produto")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro inesperado ao gerar previsões de produto: {str(e)}"
+        )
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

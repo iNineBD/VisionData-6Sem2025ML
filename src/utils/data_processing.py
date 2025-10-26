@@ -2,21 +2,22 @@ import pandas as pd
 from flask.cli import load_dotenv
 from src.config import config
 
-def parse_and_prep(csv_path: str) -> pd.DataFrame:
+def parse_and_prep(csv_path: str, group_col: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path, dtype=str)
     df.columns = [c.strip() for c in df.columns]
-    if config.DATE_COL not in df.columns or config.COMPANY_COL not in df.columns:
-        raise ValueError(f"CSV precisa conter colunas '{config.DATE_COL}' e '{config.COMPANY_COL}'")
-    # parse dates
-    df[config.DATE_COL] = pd.to_datetime(df[config.DATE_COL], errors="coerce", dayfirst=False)
-    df = df.dropna(subset=[config.DATE_COL, config.COMPANY_COL])
-    df[config.COMPANY_COL] = df[config.COMPANY_COL].str.strip()
-    df = df[[config.DATE_COL, config.COMPANY_COL]]
+    if config.DATE_COL not in df.columns or group_col not in df.columns:
+        raise ValueError(f"CSV precisa conter colunas '{config.DATE_COL}' e '{group_col}'")
+
+    df[config.DATE_COL] = pd.to_datetime(df[config.DATE_COL], errors="coerce")
+    df = df.dropna(subset=[config.DATE_COL, group_col])
+    df[group_col] = df[group_col].str.strip()
+    df = df[[config.DATE_COL, group_col]]
     df[config.DATE_COL] = df[config.DATE_COL].dt.normalize()
     return df
 
-def make_daily_series(df: pd.DataFrame, company: str) -> pd.Series:
-    sub = df[df[config.COMPANY_COL] == company].copy()
+
+def make_daily_series(df: pd.DataFrame, group_value: str, group_col: str) -> pd.Series:
+    sub = df[df[group_col] == group_value].copy()
     if sub.empty:
         return pd.Series(dtype=float)
     s = sub.groupby(config.DATE_COL).size().rename("count")
@@ -38,3 +39,23 @@ def create_lgb_features(series: pd.Series, lags=[1,7,14,30], windows=[7,30]) -> 
     df["month"] = df.index.month
     df = df.dropna()
     return df
+
+def _format_series_dict(d):
+    """
+    Converte um dict com chaves de datas para:
+      - chave no formato 'AAAA/MM/DD'
+      - valor como inteiro (round, >= 0)
+    Ignora valores NaN.
+    """
+    out = {}
+    for k, vv in (d or {}).items():
+        if pd.isna(vv):
+            continue
+        # formatar a chave como data se possível
+        try:
+            dt = pd.to_datetime(k)
+            key = dt.strftime("%Y-%m-%d")
+        except Exception:
+            key = str(k)
+        out[key] = max(0, int(round(vv)))
+    return out
