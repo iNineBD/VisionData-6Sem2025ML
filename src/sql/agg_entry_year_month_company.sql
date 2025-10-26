@@ -5,7 +5,7 @@ SELECT
     d.Month,
     SUM(t.QtTickets) AS TotalTickets
 FROM dbo.Fact_Tickets t
-JOIN dbo.Dim_Dates d 
+JOIN dbo.Dim_Dates d
     ON t.EntryDateKey = d.DateKey
 GROUP BY
     t.CompanyKey,
