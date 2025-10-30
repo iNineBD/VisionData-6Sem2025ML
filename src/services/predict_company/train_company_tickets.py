@@ -3,7 +3,6 @@ import os
 import pandas as pd
 import numpy as np
 from fastapi import FastAPI
-from src.config import config
 from src.utils.data_processing import _format_series_dict
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import warnings
@@ -280,12 +279,12 @@ def run_pipeline(csv_path: str, group_col: str):
 
 
 def load_and_predict(
-    csv_path=config.CSV_PATH, forecast_days=FORECAST_DAYS, model_dir="models"
+    csv_path="data/rows.csv", forecast_days=FORECAST_DAYS, model_dir="models"
 ):
     """Carrega os modelos salvos e gera previsões rápidas sem reentreinar."""
 
     df = parse_and_prep(csv_path)
-    top_companies = df[config.COMPANY_COL].value_counts().head(5).index.tolist()
+    top_companies = df["Company"].value_counts().head(5).index.tolist()
 
     results = {}
     for comp in top_companies:
@@ -343,6 +342,6 @@ def load_and_predict(
 
 # @app.get("/download_metrics")
 # def download_metrics():
-#     if not os.path.exists(METRICS_CSV):
+#     if not os.path.exists("model_metrics.csv"):
 #         raise HTTPException(status_code=404, detail="metrics CSV não encontrado. Rode /predict_top5 primeiro.")
-#     return FileResponse(METRICS_CSV, media_type="text/csv", filename=METRICS_CSV)
+#     return FileResponse("model_metrics.csv", media_type="text/csv", filename="model_metrics.csv")

@@ -23,7 +23,7 @@ from src.services.predict_company.train_company_tickets import run_pipeline
 from src.config import config
 
 # Importar funções compartilhadas
-from src.services.predict_all_ticketsv2.feature_engineering import (
+from src.utils.feature_engineering import (
     create_single_day_features,
     prepare_features_for_prediction,
     get_feature_columns,
@@ -238,12 +238,13 @@ async def get_forecast(days: int = 30, historical_days: int = 90):
 def predict_product():
     """Executa o pipeline e retorna as previsões dos produtos selecionados."""
     try:
-        if not os.path.exists(config.CSV_PATH):
+        if not os.path.exists(config.data["rows.csv"]):
             raise HTTPException(
-                status_code=400, detail=f"Arquivo CSV não encontrado: {config.CSV_PATH}"
+                status_code=400,
+                detail=f"Arquivo CSV não encontrado: {config.data['rows.csv']}",
             )
-        # Chama o pipeline para a coluna PRODUCT_COL
-        res = run_pipeline(config.CSV_PATH, config.COMPANY_COL)
+        # Chama o pipeline para a coluna 'Product'
+        res = run_pipeline(config.data["rows.csv"], config.Company)
         if not res:
             raise HTTPException(
                 status_code=500,
@@ -265,12 +266,13 @@ def predict_product():
 def predict_product():
     """Executa o pipeline e retorna as previsões dos produtos selecionados."""
     try:
-        if not os.path.exists(config.CSV_PATH):
+        if not os.path.exists(config.data["rows.csv"]):
             raise HTTPException(
-                status_code=400, detail=f"Arquivo CSV não encontrado: {config.CSV_PATH}"
+                status_code=400,
+                detail=f"Arquivo CSV não encontrado: {config.data['rows.csv']}",
             )
-        # Chama o pipeline para a coluna PRODUCT_COL
-        res = run_pipeline(config.CSV_PATH, config.PRODUCT_COL)
+        # Chama o pipeline para a coluna 'Product'
+        res = run_pipeline(config.data["rows.csv"], config.Product)
         if not res:
             raise HTTPException(
                 status_code=500,

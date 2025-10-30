@@ -13,30 +13,33 @@ import lightgbm as lgb
 # %%
 warnings.filterwarnings("ignore")
 
-CSV_PATH = os.getenv("CSV_PATH")
-DATE_COL = os.getenv("DATE_COL")
-COMPANY_COL = os.getenv("COMPANY_COL")
 FORECAST_DAYS = 30
-SEASONAL_PERIOD = 7  # Sazonalidade diária -> 7 (semanal)
-METRICS_CSV = os.getenv("METRICS_CSV")
+SEASONAL_PERIOD = 7
+CSV_PATH = "data/rows.csv"
+
 # %%
 
 
-def parse_and_prep(csv_path: str) -> pd.DataFrame:
+# funções de preparação de dados
+def parse_and_prep(CSV_PATH: str) -> pd.DataFrame:
     """Carrega, limpa e prepara os dados de reclamações."""
     print("Iniciando preparação de dados...")
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Arquivo CSV não encontrado em: {csv_path}")
+    if not os.path.exists(CSV_PATH):
+        raise FileNotFoundError(f"Arquivo CSV não encontrado em: {CSV_PATH}")
 
-    df = pd.read_csv(csv_path, dtype=str)
+    df = pd.read_csv(CSV_PATH, dtype=str)
     df.columns = [c.strip() for c in df.columns]
-    if DATE_COL not in df.columns or COMPANY_COL not in df.columns:
-        raise ValueError(f"CSV precisa conter colunas '{DATE_COL}' e '{COMPANY_COL}'")
-    df[DATE_COL] = pd.to_datetime(df[DATE_COL], errors="coerce", dayfirst=False)
-    df = df.dropna(subset=[DATE_COL, COMPANY_COL])
-    df[COMPANY_COL] = df[COMPANY_COL].str.strip()
-    df = df[[DATE_COL, COMPANY_COL]]
-    df[DATE_COL] = df[DATE_COL].dt.normalize()
+    if "Date received" not in df.columns or "Company" not in df.columns:
+        raise ValueError(
+            f"CSV precisa conter colunas '{'Date received'}' e '{'Company'}'"
+        )
+    df["Date received"] = pd.to_datetime(
+        df["Date received"], errors="coerce", dayfirst=False
+    )
+    df = df.dropna(subset=["Date received", "Company"])
+    df["Company"] = df["Company"].str.strip()
+    df = df[["Date received", "Company"]]
+    df["Date received"] = df["Date received"].dt.normalize()
     print(f"Dados preparados. Total de linhas: {len(df)}")
     return df
 
@@ -44,18 +47,20 @@ def parse_and_prep(csv_path: str) -> pd.DataFrame:
 # %%
 
 
+# cria série temporal diária para uma companhia
 def make_daily_series(df: pd.DataFrame, company: str) -> pd.Series:
     """Cria uma série temporal diária de contagem de tickets para uma companhia."""
-    sub = df[df[COMPANY_COL] == company].copy()
+    sub = df[df["Company"] == company].copy()
     if sub.empty:
         return pd.Series(dtype=float)
-    s = sub.groupby(DATE_COL).size().rename("count")
+    s = sub.groupby("Date received").size().rename("count")
     idx = pd.date_range(start=s.index.min(), end=s.index.max(), freq="D")
     s = s.reindex(idx, fill_value=0)
-    s.index.name = DATE_COL
+    s.index.name = "Date received"
     return s
 
 
+# cria features para LightGBM
 def create_lgb_features(
     series: pd.Series, lags=[1, 7, 14, 30], windows=[7, 30]
 ) -> pd.DataFrame:
@@ -76,6 +81,7 @@ def create_lgb_features(
     return df
 
 
+# treina modelo LightGBM
 def train_lightgbm(series: pd.Series, forecast_days=FORECAST_DAYS):
     """Treina o modelo LightGBM e gera previsões iterativas."""
     df_feat = create_lgb_features(series)
@@ -217,14 +223,14 @@ def train_sarimax(
         return None
 
 
-def run_pipeline(csv_path=CSV_PATH):
+def run_pipeline(CSV_PATH: str):
     """Função principal que executa o pipeline de previsão para as top 5 companhias."""
     try:
-        df = parse_and_prep(csv_path)
+        df = parse_and_prep(CSV_PATH)
     except Exception as e:
         print(f"Erro na preparação dos dados: {e}")
         return None
-    top_companies = df[COMPANY_COL].value_counts().head(5).index.tolist()
+    top_companies = df["Company"].value_counts().head(5).index.tolist()
     print("\n" + "=" * 50)
     print(f"| Top 5 Companhias selecionadas: {top_companies}")
     print("=" * 50 + "\n")
@@ -346,7 +352,7 @@ def run_pipeline(csv_path=CSV_PATH):
         print("-" * 50 + "\n")
 
     metrics_df = pd.DataFrame(metrics_rows)
-    metrics_df.to_csv(METRICS_CSV, index=False)
+    metrics_df.to_csv("model_metrics.csv", index=False)
 
     sar_metrics = (
         metrics_df[["sar_mse", "sar_mae", "sar_rmse", "sar_r2"]].mean().to_dict()
@@ -488,7 +494,7 @@ def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
 
 
 print("Iniciando o Pipeline de Previsão...")
-forecast_summary = run_pipeline(CSV_PATH)
+forecast_summary = run_pipeline("data/rows.csv")
 if forecast_summary:
     print("\n" + "=" * 50)
     print("Gerando Gráficos de Previsão...")
