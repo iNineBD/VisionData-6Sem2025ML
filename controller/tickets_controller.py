@@ -20,7 +20,6 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, project_root)
 
 from src.services.predict_company.train_company_tickets import run_pipeline
-from src.config import config
 
 # Importar funções compartilhadas
 from src.utils.feature_engineering import (
@@ -238,13 +237,13 @@ async def get_forecast(days: int = 30, historical_days: int = 90):
 def predict_product():
     """Executa o pipeline e retorna as previsões dos produtos selecionados."""
     try:
-        if not os.path.exists(config.data["rows.csv"]):
+        if not os.path.exists("data/rows.csv"):
             raise HTTPException(
                 status_code=400,
-                detail=f"Arquivo CSV não encontrado: {config.data['rows.csv']}",
+                detail=f"Arquivo CSV não encontrado: {'data/rows.csv'}",
             )
         # Chama o pipeline para a coluna 'Product'
-        res = run_pipeline(config.data["rows.csv"], config.Company)
+        res = run_pipeline("data/rows.csv", "Product")
         if not res:
             raise HTTPException(
                 status_code=500,
@@ -266,13 +265,13 @@ def predict_product():
 def predict_product():
     """Executa o pipeline e retorna as previsões dos produtos selecionados."""
     try:
-        if not os.path.exists(config.data["rows.csv"]):
+        if not os.path.exists("data/rows.csv"):
             raise HTTPException(
                 status_code=400,
-                detail=f"Arquivo CSV não encontrado: {config.data['rows.csv']}",
+                detail=f"Arquivo CSV não encontrado: {'data/rows.csv'}",
             )
         # Chama o pipeline para a coluna 'Product'
-        res = run_pipeline(config.data["rows.csv"], config.Product)
+        res = run_pipeline("data/rows.csv", "Product")
         if not res:
             raise HTTPException(
                 status_code=500,

@@ -22,7 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
 # %%
-from src.services.predict_all_ticketsv2.feature_engineering import (
+from src.utils.feature_engineering import (
     load_and_prepare,
     create_time_features,  # Mantido para salvar os dados para a API
 )
