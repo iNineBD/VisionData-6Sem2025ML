@@ -19,7 +19,7 @@ import logging
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, project_root)
 
-from src.services.predict_company.app import run_pipeline
+from src.services.predict_company.train_company_tickets import run_pipeline
 from src.config import config
 
 # Importar funções compartilhadas
@@ -63,6 +63,7 @@ DATA_PATH = "data/processed/tickets_with_features.csv"
 # Variáveis globais
 loaded_model = None
 model_type = ACTIVE_MODEL
+
 
 # ==================== FUNÇÕES DE CARREGAMENTO ====================
 def load_resources():
