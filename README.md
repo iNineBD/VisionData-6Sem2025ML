@@ -1,5 +1,7 @@
 # 6Sem2025ML
 
+Repositório para o projeto de Machine Learning do 6º semestre de 2025.
+
 ## Pre-commit hooks
 
 Este repositório usa pre-commit para lint/format e validação de mensagens de commit.
@@ -12,10 +14,6 @@ pre-commit install
 pre-commit install --hook-type commit-msg   # instala hook de commit-msg se houver
 pre-commit run --all-files                   # executa todos os hooks uma vez
 ```
-
-CI:
-
-- Execute `pre-commit run --all-files --show-diff-on-failure` antes dos testes para garantir consistência.
 
 ## Estrutura de Diretórios para Projeto de Machine Learning
 

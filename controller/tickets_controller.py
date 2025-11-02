@@ -19,7 +19,6 @@ import logging
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, project_root)
 
-from src.services.predict_company.train_company_tickets import run_pipeline
 
 # Importar funções compartilhadas
 from src.utils.feature_engineering import (
@@ -233,60 +232,146 @@ async def get_forecast(days: int = 30, historical_days: int = 90):
         raise HTTPException(status_code=500, detail=f"Erro ao gerar previsão: {str(e)}")
 
 
+# Utilitários para carregar modelos e prever rapidamente
+def load_best_model_and_predict(
+    group_col: str,
+    models_dir: str,
+    csv_path: str,
+    forecast_days: int = 30,
+    historical_days: int = 60,
+):
+    from src.utils.data_processing import (
+        parse_and_prep,
+        make_daily_series,
+        _format_series_dict,
+    )
+    import numpy as np
+
+    df = parse_and_prep(csv_path, group_col)
+    top_values = df[group_col].value_counts().head(5).index.tolist()
+    results = []
+    for item in top_values:
+        # Procura modelo salvo
+        sarimax_path = os.path.join(models_dir, f"{item}_SARIMAX.pkl")
+        lgbm_path = os.path.join(models_dir, f"{item}_LightGBM.pkl")
+        series = make_daily_series(df, item, group_col)
+        if series.empty or len(series) < 50:
+            continue
+        preds = None
+        best_model = None
+        # Preferir SARIMAX se existir, senão LightGBM
+        if os.path.exists(sarimax_path):
+            model = joblib.load(sarimax_path)
+            future_index = pd.date_range(
+                start=series.index[-1] + pd.Timedelta(days=1),
+                periods=forecast_days,
+                freq="D",
+            )
+            preds = model.get_forecast(steps=forecast_days).predicted_mean
+            preds.index = future_index
+            best_model = "SARIMAX"
+        elif os.path.exists(lgbm_path):
+            model = joblib.load(lgbm_path)
+            tmp_series = series.copy()
+            future_index = pd.date_range(
+                start=series.index[-1] + pd.Timedelta(days=1),
+                periods=forecast_days,
+                freq="D",
+            )
+            preds_list = []
+            for dt in future_index:
+                feats = {}
+                for lag in [1, 7, 14, 30]:
+                    feats[f"lag_{lag}"] = tmp_series.get(dt - pd.Timedelta(days=lag), 0)
+                for w in [7, 30]:
+                    vals = [
+                        tmp_series.get(dt - pd.Timedelta(days=i), 0)
+                        for i in range(1, w + 1)
+                    ]
+                    feats[f"roll_mean_{w}"] = np.mean(vals)
+                    feats[f"roll_std_{w}"] = np.std(vals)
+                feats["dayofweek"] = dt.dayofweek
+                feats["day"] = dt.day
+                feats["month"] = dt.month
+                Xf = pd.DataFrame([feats])
+                p = model.predict(Xf)[0]
+                p = max(0, p)
+                preds_list.append(p)
+                tmp_series[dt] = p
+            preds = pd.Series(preds_list, index=future_index)
+            best_model = "LightGBM"
+        # Histórico real recente
+        hist_series = series.tail(historical_days)
+        hist_dict = _format_series_dict(hist_series.to_dict())
+        pred_dict = _format_series_dict(preds.to_dict()) if preds is not None else {}
+        results.append(
+            {
+                group_col.lower(): item,
+                "model_name": best_model,
+                "days": forecast_days,
+                "historical": hist_dict,
+                "predictions": pred_dict,
+            }
+        )
+    return {"best_models_summary": results}
+
+
+# Endpoint para companhias
 @app.get("/predict_company", response_model=PredictionResponse)
-def predict_product():
-    """Executa o pipeline e retorna as previsões dos produtos selecionados."""
-    try:
-        if not os.path.exists("data/rows.csv"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Arquivo CSV não encontrado: {'data/rows.csv'}",
-            )
-        # Chama o pipeline para a coluna 'Product'
-        res = run_pipeline("data/rows.csv", "Product")
-        if not res:
-            raise HTTPException(
-                status_code=500,
-                detail="Nenhuma previsão gerada. Verifique os dados ou os logs do servidor.",
-            )
-        return JSONResponse(status_code=200, content=res)
-
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        logging.exception("Erro inesperado ao gerar previsões de produto")
+def predict_company(days: int = 30, historical_days: int = 60):
+    models_dir = "models/predict_company_tickets"
+    csv_path = "data/rows.csv"
+    if not os.path.exists(models_dir):
         raise HTTPException(
             status_code=500,
-            detail=f"Erro inesperado ao gerar previsões de produto: {str(e)}",
+            detail="Modelos de companhia não encontrados. Rode o treinamento primeiro.",
         )
+    if not os.path.exists(csv_path):
+        raise HTTPException(
+            status_code=400, detail=f"Arquivo CSV não encontrado: {csv_path}"
+        )
+    res = load_best_model_and_predict(
+        "Company",
+        models_dir,
+        csv_path,
+        forecast_days=days,
+        historical_days=historical_days,
+    )
+    if not res["best_models_summary"]:
+        raise HTTPException(
+            status_code=500,
+            detail="Nenhuma previsão gerada. Verifique os dados ou os modelos.",
+        )
+    return JSONResponse(status_code=200, content=res)
 
 
+# Endpoint para produtos
 @app.get("/predict_product", response_model=PredictionResponse)
-def predict_product():
-    """Executa o pipeline e retorna as previsões dos produtos selecionados."""
-    try:
-        if not os.path.exists("data/rows.csv"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Arquivo CSV não encontrado: {'data/rows.csv'}",
-            )
-        # Chama o pipeline para a coluna 'Product'
-        res = run_pipeline("data/rows.csv", "Product")
-        if not res:
-            raise HTTPException(
-                status_code=500,
-                detail="Nenhuma previsão gerada. Verifique os dados ou os logs do servidor.",
-            )
-        return JSONResponse(status_code=200, content=res)
-
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        logging.exception("Erro inesperado ao gerar previsões de produto")
+def predict_product(days: int = 30, historical_days: int = 60):
+    models_dir = "models/predict_product_tickets"
+    csv_path = "data/rows.csv"
+    if not os.path.exists(models_dir):
         raise HTTPException(
             status_code=500,
-            detail=f"Erro inesperado ao gerar previsões de produto: {str(e)}",
+            detail="Modelos de produto não encontrados. Rode o treinamento primeiro.",
         )
+    if not os.path.exists(csv_path):
+        raise HTTPException(
+            status_code=400, detail=f"Arquivo CSV não encontrado: {csv_path}"
+        )
+    res = load_best_model_and_predict(
+        "Product",
+        models_dir,
+        csv_path,
+        forecast_days=days,
+        historical_days=historical_days,
+    )
+    if not res["best_models_summary"]:
+        raise HTTPException(
+            status_code=500,
+            detail="Nenhuma previsão gerada. Verifique os dados ou os modelos.",
+        )
+    return JSONResponse(status_code=200, content=res)
 
 
 if __name__ == "__main__":
