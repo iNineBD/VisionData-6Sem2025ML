@@ -1,6 +1,7 @@
 from pathlib import Path
 import pandas as pd
 import warnings
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from src.utils.data_processing import (
     parse_and_prep,
     make_daily_series,
@@ -26,8 +27,11 @@ def train_lightgbm(series: pd.Series, forecast_days=FORECAST_DAYS):
         return None
     test_size = min(90, int(len(df_feat) * 0.3))
     train = df_feat.iloc[:-test_size]
+    test = df_feat.iloc[-test_size:]
     X_train = train.drop(columns=["y"])
     y_train = train["y"]
+    X_test = test.drop(columns=["y"])
+    y_test = test["y"]
     lgb_train = lgb.Dataset(X_train, y_train)
     params = {
         "objective": "regression",
@@ -41,24 +45,42 @@ def train_lightgbm(series: pd.Series, forecast_days=FORECAST_DAYS):
     model = lgb.train(
         params, lgb_train, valid_sets=[lgb_train], callbacks=[lgb.log_evaluation(0)]
     )
-    return model
+    y_pred_test = model.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred_test)
+    mae = mean_absolute_error(y_test, y_pred_test)
+    rmse = mean_squared_error(y_test, y_pred_test) ** 0.5
+    r2 = r2_score(y_test, y_pred_test)
+    return {"model": model, "mse": mse, "mae": mae, "rmse": rmse, "r2": r2}
 
 
 def train_sarimax(series: pd.Series, seasonal_period=SEASONAL_PERIOD):
     if len(series) < 2:
         return None
     try:
+        test_days = min(90, int(len(series) * 0.3))
+        train = series.iloc[:-test_days] if test_days > 0 else series
+        test = series.iloc[-test_days:] if test_days > 0 else series
         order = (1, 1, 1)
         seasonal_order = (1, 0, 1, seasonal_period)
         model = SARIMAX(
-            series,
+            train,
             order=order,
             seasonal_order=seasonal_order,
             enforce_stationarity=False,
             enforce_invertibility=False,
         )
         res = model.fit(disp=False)
-        return res
+        if test_days > 0:
+            pred_test = res.get_prediction(
+                start=test.index[0], end=test.index[-1]
+            ).predicted_mean
+            mse = mean_squared_error(test, pred_test)
+            mae = mean_absolute_error(test, pred_test)
+            rmse = mean_squared_error(test, pred_test) ** 0.5
+            r2 = r2_score(test, pred_test)
+        else:
+            mse = mae = rmse = r2 = float("nan")
+        return {"model": res, "mse": mse, "mae": mae, "rmse": rmse, "r2": r2}
     except Exception:
         return None
 
@@ -73,16 +95,34 @@ def main():
         if series.empty or len(series) < 50:
             print(f"- Dados insuficientes para {comp}")
             continue
-        sarimax_model = train_sarimax(series)
-        lgbm_model = train_lightgbm(series)
-        if sarimax_model:
-            sarimax_path = MODELS_DIR / f"{comp}_SARIMAX.pkl"
-            joblib.dump(sarimax_model, sarimax_path)
-            print(f"  ✓ SARIMAX salvo em {sarimax_path}")
-        if lgbm_model:
-            lgbm_path = MODELS_DIR / f"{comp}_LightGBM.pkl"
-            joblib.dump(lgbm_model, lgbm_path)
-            print(f"  ✓ LightGBM salvo em {lgbm_path}")
+        sarimax = train_sarimax(series)
+        lgbm = train_lightgbm(series)
+        best = None
+        if sarimax and lgbm:
+            # Escolher pelo menor MSE
+            if sarimax["mse"] <= lgbm["mse"]:
+                best = sarimax["model"]
+                print(
+                    f"  ✓ SARIMAX é o melhor para {comp} (MSE={sarimax['mse']:.2f} < {lgbm['mse']:.2f})"
+                )
+            else:
+                best = lgbm["model"]
+                print(
+                    f"  ✓ LightGBM é o melhor para {comp} (MSE={lgbm['mse']:.2f} < {sarimax['mse']:.2f})"
+                )
+        elif sarimax:
+            best = sarimax["model"]
+            print(f"  ✓ Apenas SARIMAX treinado para {comp}")
+        elif lgbm:
+            best = lgbm["model"]
+            print(f"  ✓ Apenas LightGBM treinado para {comp}")
+        else:
+            print(f"  ✗ Nenhum modelo treinado para {comp}")
+            continue
+        # Salvar apenas o melhor
+        best_path = MODELS_DIR / f"{comp}_BEST.pkl"
+        joblib.dump(best, best_path)
+        print(f"  ✓ Modelo campeão salvo em {best_path}")
 
 
 if __name__ == "__main__":

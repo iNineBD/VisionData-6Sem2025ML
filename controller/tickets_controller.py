@@ -150,6 +150,7 @@ app = FastAPI(
 # ==================== CORS ====================
 origins = [
     "http://localhost:3000",
+    "http://localhost:3001",
     "http://127.0.0.1:3000",
 ]
 
@@ -251,33 +252,24 @@ def load_best_model_and_predict(
     top_values = df[group_col].value_counts().head(5).index.tolist()
     results = []
     for item in top_values:
-        # Procura modelo salvo
-        sarimax_path = os.path.join(models_dir, f"{item}_SARIMAX.pkl")
-        lgbm_path = os.path.join(models_dir, f"{item}_LightGBM.pkl")
+        # Procura apenas o modelo campeão
+        best_path = os.path.join(models_dir, f"{item}_BEST.pkl")
         series = make_daily_series(df, item, group_col)
-        if series.empty or len(series) < 50:
+        if series.empty or len(series) < 50 or not os.path.exists(best_path):
             continue
-        preds = None
-        best_model = None
-        # Preferir SARIMAX se existir, senão LightGBM
-        if os.path.exists(sarimax_path):
-            model = joblib.load(sarimax_path)
-            future_index = pd.date_range(
-                start=series.index[-1] + pd.Timedelta(days=1),
-                periods=forecast_days,
-                freq="D",
-            )
+        model = joblib.load(best_path)
+        # Detecta tipo do modelo
+        model_name = type(model).__name__
+        future_index = pd.date_range(
+            start=series.index[-1] + pd.Timedelta(days=1),
+            periods=forecast_days,
+            freq="D",
+        )
+        if hasattr(model, "get_forecast"):
             preds = model.get_forecast(steps=forecast_days).predicted_mean
             preds.index = future_index
-            best_model = "SARIMAX"
-        elif os.path.exists(lgbm_path):
-            model = joblib.load(lgbm_path)
+        else:
             tmp_series = series.copy()
-            future_index = pd.date_range(
-                start=series.index[-1] + pd.Timedelta(days=1),
-                periods=forecast_days,
-                freq="D",
-            )
             preds_list = []
             for dt in future_index:
                 feats = {}
@@ -299,15 +291,13 @@ def load_best_model_and_predict(
                 preds_list.append(p)
                 tmp_series[dt] = p
             preds = pd.Series(preds_list, index=future_index)
-            best_model = "LightGBM"
-        # Histórico real recente
         hist_series = series.tail(historical_days)
         hist_dict = _format_series_dict(hist_series.to_dict())
         pred_dict = _format_series_dict(preds.to_dict()) if preds is not None else {}
         results.append(
             {
                 group_col.lower(): item,
-                "model_name": best_model,
+                "model_name": model_name,
                 "days": forecast_days,
                 "historical": hist_dict,
                 "predictions": pred_dict,
