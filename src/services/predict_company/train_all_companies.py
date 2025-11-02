@@ -1,6 +1,8 @@
 from pathlib import Path
 import pandas as pd
 import warnings
+import mlflow
+import os
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from src.utils.data_processing import (
     parse_and_prep,
@@ -86,6 +88,9 @@ def train_sarimax(series: pd.Series, seasonal_period=SEASONAL_PERIOD):
 
 
 def main():
+    # Configurar MLflow para apontar para o servidor do docker-compose
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"))
+    mlflow.set_experiment("predict_company_tickets")
     print(f"Lendo dados de {CSV_PATH} ...")
     df = parse_and_prep(str(CSV_PATH), "Company")
     top_companies = df["Company"].value_counts().head(5).index.tolist()
@@ -98,28 +103,60 @@ def main():
         sarimax = train_sarimax(series)
         lgbm = train_lightgbm(series)
         best = None
-        if sarimax and lgbm:
-            # Escolher pelo menor MSE
-            if sarimax["mse"] <= lgbm["mse"]:
+        with mlflow.start_run(run_name=comp):
+            if sarimax:
+                mlflow.log_metrics(
+                    {
+                        "sarimax_mse": sarimax["mse"],
+                        "sarimax_mae": sarimax["mae"],
+                        "sarimax_rmse": sarimax["rmse"],
+                        "sarimax_r2": sarimax["r2"],
+                    }
+                )
+            if lgbm:
+                mlflow.log_metrics(
+                    {
+                        "lgbm_mse": lgbm["mse"],
+                        "lgbm_mae": lgbm["mae"],
+                        "lgbm_rmse": lgbm["rmse"],
+                        "lgbm_r2": lgbm["r2"],
+                    }
+                )
+            if sarimax and lgbm:
+                if sarimax["mse"] <= lgbm["mse"]:
+                    best = sarimax["model"]
+                    print(
+                        f"  ✓ SARIMAX é o melhor para {comp} (MSE={sarimax['mse']:.2f} < {lgbm['mse']:.2f})"
+                    )
+                    mlflow.sklearn.log_model(
+                        sarimax["model"],
+                        "model",
+                        registered_model_name=f"{comp}_SARIMAX",
+                    )
+                else:
+                    best = lgbm["model"]
+                    print(
+                        f"  ✓ LightGBM é o melhor para {comp} (MSE={lgbm['mse']:.2f} < {sarimax['mse']:.2f})"
+                    )
+                    mlflow.sklearn.log_model(
+                        lgbm["model"], "model", registered_model_name=f"{comp}_LGBM"
+                    )
+            elif sarimax:
                 best = sarimax["model"]
-                print(
-                    f"  ✓ SARIMAX é o melhor para {comp} (MSE={sarimax['mse']:.2f} < {lgbm['mse']:.2f})"
+                print(f"  ✓ Apenas SARIMAX treinado para {comp}")
+                mlflow.sklearn.log_model(
+                    sarimax["model"], "model", registered_model_name=f"{comp}_SARIMAX"
+                )
+            elif lgbm:
+                best = lgbm["model"]
+                print(f"  ✓ Apenas LightGBM treinado para {comp}")
+                mlflow.sklearn.log_model(
+                    lgbm["model"], "model", registered_model_name=f"{comp}_LGBM"
                 )
             else:
-                best = lgbm["model"]
-                print(
-                    f"  ✓ LightGBM é o melhor para {comp} (MSE={lgbm['mse']:.2f} < {sarimax['mse']:.2f})"
-                )
-        elif sarimax:
-            best = sarimax["model"]
-            print(f"  ✓ Apenas SARIMAX treinado para {comp}")
-        elif lgbm:
-            best = lgbm["model"]
-            print(f"  ✓ Apenas LightGBM treinado para {comp}")
-        else:
-            print(f"  ✗ Nenhum modelo treinado para {comp}")
-            continue
-        # Salvar apenas o melhor
+                print(f"  ✗ Nenhum modelo treinado para {comp}")
+                continue
+        # Salvar apenas o melhor localmente
         best_path = MODELS_DIR / f"{comp}_BEST.pkl"
         joblib.dump(best, best_path)
         print(f"  ✓ Modelo campeão salvo em {best_path}")
