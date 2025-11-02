@@ -47,6 +47,8 @@ def load_and_prepare(df: pd.DataFrame):
         "2017-12-24 00:00:00",
         "2017-12-25 00:00:00",
         "2012-05-15 00:00:00",
+        "2018-10-16 00:00:00",
+        "2018-10-17 00:00:00",
     ]
     daily = daily[daily["date"] <= "2019-03-21 00:00:00"]
     daily = daily[~daily["date"].isin(datas_remover)]
