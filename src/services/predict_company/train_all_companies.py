@@ -93,6 +93,8 @@ def main():
     print(f"Lendo dados de {CSV_PATH} ...")
     df = parse_and_prep(str(CSV_PATH), "Company")
     top_companies = df["Company"].value_counts().head(5).index.tolist()
+    import joblib
+
     for comp in top_companies:
         print(f"Treinando modelos para: {comp}")
         series = make_daily_series(df, comp, "Company")
@@ -142,6 +144,25 @@ def main():
                 mlflow.log_params(
                     {"order": "(1, 1, 1)", "seasonal_order": "(1, 0, 1, 7)"}
                 )
+        # Salvar apenas o melhor modelo localmente como _BEST.pkl
+        if lgbm and sarimax:
+            # Critério: menor MSE, se igual, maior R2
+            if lgbm["mse"] < sarimax["mse"] or (
+                lgbm["mse"] == sarimax["mse"] and lgbm["r2"] >= sarimax["r2"]
+            ):
+                best_model = lgbm["model"]
+            else:
+                best_model = sarimax["model"]
+        elif lgbm:
+            best_model = lgbm["model"]
+        elif sarimax:
+            best_model = sarimax["model"]
+        else:
+            best_model = None
+        if best_model is not None:
+            best_path = MODELS_DIR / f"{comp}_BEST.pkl"
+            joblib.dump(best_model, best_path)
+            print(f"  ✓ Modelo campeão salvo em {best_path}")
         if not lgbm and not sarimax:
             print(f"  ✗ Nenhum modelo treinado para {comp}")
             continue
