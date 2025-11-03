@@ -2,6 +2,8 @@ services:
   app:
     build: .
     container_name: predict_tickets_app
+    environment:
+      - GIT_PYTHON_REFRESH=quiet
     ports:
       - "8000:8000"
 
@@ -10,6 +12,7 @@ services:
     container_name: mlflow_server
     environment:
       - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - GIT_PYTHON_REFRESH=quiet
     command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri /mlflow/mlruns --default-artifact-root /mlflow/mlruns --allowed-hosts '*'
     ports:
       - "5000:5000"

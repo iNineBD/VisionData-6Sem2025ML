@@ -9,7 +9,6 @@ from src.utils.data_processing import (
     make_daily_series,
     create_lgb_features,
 )
-import joblib
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 import lightgbm as lgb
 
@@ -102,18 +101,12 @@ def main():
             continue
         sarimax = train_sarimax(series)
         lgbm = train_lightgbm(series)
-        best = None
-        with mlflow.start_run(run_name=comp):
-            if sarimax:
-                mlflow.log_metrics(
-                    {
-                        "sarimax_mse": sarimax["mse"],
-                        "sarimax_mae": sarimax["mae"],
-                        "sarimax_rmse": sarimax["rmse"],
-                        "sarimax_r2": sarimax["r2"],
-                    }
-                )
-            if lgbm:
+        # LightGBM
+        if lgbm:
+            with mlflow.start_run(run_name=f"{comp}_LGBM"):
+                best = lgbm["model"]
+                print(f"  ✓ LightGBM treinado para {comp}")
+                mlflow.sklearn.log_model(sk_model=best, name="lgbm_model")
                 mlflow.log_metrics(
                     {
                         "lgbm_mse": lgbm["mse"],
@@ -122,44 +115,37 @@ def main():
                         "lgbm_r2": lgbm["r2"],
                     }
                 )
-            if sarimax and lgbm:
-                if sarimax["mse"] <= lgbm["mse"]:
-                    best = sarimax["model"]
-                    print(
-                        f"  ✓ SARIMAX é o melhor para {comp} (MSE={sarimax['mse']:.2f} < {lgbm['mse']:.2f})"
-                    )
-                    mlflow.sklearn.log_model(
-                        sarimax["model"],
-                        "model",
-                        registered_model_name=f"{comp}_SARIMAX",
-                    )
-                else:
-                    best = lgbm["model"]
-                    print(
-                        f"  ✓ LightGBM é o melhor para {comp} (MSE={lgbm['mse']:.2f} < {sarimax['mse']:.2f})"
-                    )
-                    mlflow.sklearn.log_model(
-                        lgbm["model"], "model", registered_model_name=f"{comp}_LGBM"
-                    )
-            elif sarimax:
+                mlflow.log_params(
+                    {
+                        "objective": "regression",
+                        "metric": "l2",
+                        "boosting_type": "gbdt",
+                        "num_leaves": 31,
+                        "learning_rate": 0.05,
+                        "n_estimators": 500,
+                    }
+                )
+        # SARIMAX
+        if sarimax:
+            with mlflow.start_run(run_name=f"{comp}_SARIMAX"):
                 best = sarimax["model"]
-                print(f"  ✓ Apenas SARIMAX treinado para {comp}")
-                mlflow.sklearn.log_model(
-                    sarimax["model"], "model", registered_model_name=f"{comp}_SARIMAX"
+                print(f"  ✓ SARIMAX treinado para {comp}")
+                mlflow.sklearn.log_model(sk_model=best, name="sarimax_model")
+                mlflow.log_metrics(
+                    {
+                        "sarimax_mse": sarimax["mse"],
+                        "sarimax_mae": sarimax["mae"],
+                        "sarimax_rmse": sarimax["rmse"],
+                        "sarimax_r2": sarimax["r2"],
+                    }
                 )
-            elif lgbm:
-                best = lgbm["model"]
-                print(f"  ✓ Apenas LightGBM treinado para {comp}")
-                mlflow.sklearn.log_model(
-                    lgbm["model"], "model", registered_model_name=f"{comp}_LGBM"
+                mlflow.log_params(
+                    {"order": "(1, 1, 1)", "seasonal_order": "(1, 0, 1, 7)"}
                 )
-            else:
-                print(f"  ✗ Nenhum modelo treinado para {comp}")
-                continue
-        # Salvar apenas o melhor localmente
-        best_path = MODELS_DIR / f"{comp}_BEST.pkl"
-        joblib.dump(best, best_path)
-        print(f"  ✓ Modelo campeão salvo em {best_path}")
+        if not lgbm and not sarimax:
+            print(f"  ✗ Nenhum modelo treinado para {comp}")
+            continue
+        print(f"  ✓ Modelos treinados e salvos para {comp}")
 
 
 if __name__ == "__main__":
