@@ -132,6 +132,8 @@ Para cada run, são salvos:
 
 Isso permite rastreabilidade, comparação e reprodutibilidade dos experimentos.
 
+<img width="2201" height="1099" alt="image" src="https://github.com/user-attachments/assets/662c2318-b92f-42d8-9433-2122c1a88e64" />
+
 ## Pre-commit hooks
 
 Este repositório usa pre-commit para lint/format e validação de mensagens de commit.
