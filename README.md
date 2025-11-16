@@ -55,10 +55,20 @@ O ciclo de desenvolvimento dos modelos neste projeto segue as melhores práticas
 ```python
 # remoção de nulos
 df = df.dropna()
+
 # conversão de datas
 df['date'] = pd.to_datetime(df['date'])
-# filtragem de outliers
-df = df[(df['ticket_count'] >= lower_bound) & (df['ticket_count'] <= upper_bound)]
+
+# remover outliers usando o método do desvio interquartil (IQR)
+Q1 = daily["ticket_count"].quantile(0.25)
+Q3 = daily["ticket_count"].quantile(0.75)
+IQR = Q3 - Q1
+lower_bound = Q1 - 1.5 * IQR
+upper_bound = Q3 + 1.5 * IQR
+daily = daily[
+    (daily["ticket_count"] >= lower_bound) &
+     (daily["ticket_count"] <= upper_bound)
+    ]
 ```
 
 ### 4. Variáveis de Treino e Teste

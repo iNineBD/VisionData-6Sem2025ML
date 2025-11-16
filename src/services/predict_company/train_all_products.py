@@ -94,6 +94,7 @@ def main():
     df = parse_and_prep(str(CSV_PATH), "Product")
     top_products = df["Product"].value_counts().head(5).index.tolist()
     import joblib
+    from src.services.predict_company.plot_utils_products import plot_predictions
 
     for prod in top_products:
         print(f"Treinando modelos para: {prod}")
@@ -105,6 +106,13 @@ def main():
         lgbm = train_lightgbm(series)
         # LightGBM
         if lgbm:
+            test_size = min(90, int(len(series) * 0.3))
+            train = series.iloc[:-test_size]
+            test = series.iloc[-test_size:]
+            y_pred = lgbm["model"].predict(
+                create_lgb_features(series).iloc[-test_size:].drop(columns=["y"])
+            )
+            plt_path = plot_predictions(train, test, y_pred, f"{prod}_LGBM")
             with mlflow.start_run(run_name=f"{prod}_LGBM"):
                 best = lgbm["model"]
                 print(f"  ✓ LightGBM treinado para {prod}")
@@ -127,8 +135,21 @@ def main():
                         "n_estimators": 500,
                     }
                 )
+                mlflow.log_artifact(str(plt_path), artifact_path="plots")
         # SARIMAX
         if sarimax:
+            test_size = min(90, int(len(series) * 0.3))
+            train = series.iloc[:-test_size]
+            test = series.iloc[-test_size:]
+            if test_size > 0:
+                y_pred = (
+                    sarimax["model"]
+                    .get_prediction(start=test.index[0], end=test.index[-1])
+                    .predicted_mean
+                )
+                plt_path = plot_predictions(train, test, y_pred, f"{prod}_SARIMAX")
+            else:
+                plt_path = None
             with mlflow.start_run(run_name=f"{prod}_SARIMAX"):
                 best = sarimax["model"]
                 print(f"  ✓ SARIMAX treinado para {prod}")
@@ -144,6 +165,8 @@ def main():
                 mlflow.log_params(
                     {"order": "(1, 1, 1)", "seasonal_order": "(1, 0, 1, 7)"}
                 )
+                if plt_path:
+                    mlflow.log_artifact(str(plt_path), artifact_path="plots")
         # Salvar apenas o melhor modelo localmente como _BEST.pkl
         if lgbm and sarimax:
             # Critério: menor MSE, se igual, maior R2

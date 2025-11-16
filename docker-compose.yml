@@ -11,11 +11,8 @@ services:
     image: ghcr.io/mlflow/mlflow:v3.5.0
     container_name: mlflow_server
     environment:
-      - MLFLOW_TRACKING_URI=http://mlflow:5000
       - GIT_PYTHON_REFRESH=quiet
-    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri /mlflow/mlruns --default-artifact-root /mlflow/mlruns --allowed-hosts '*'
+    command: mlflow server --host 0.0.0.0 --port 5000 --allowed-hosts '*'
     ports:
       - "5000:5000"
-    volumes:
-      - ./mlruns:/mlflow/mlruns
     restart: unless-stopped

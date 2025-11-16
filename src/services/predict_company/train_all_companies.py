@@ -1,3 +1,4 @@
+# %%
 from pathlib import Path
 import pandas as pd
 import warnings
@@ -13,13 +14,14 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 import lightgbm as lgb
 
 warnings.filterwarnings("ignore")
-
+# %%
 FORECAST_DAYS = 30
 SEASONAL_PERIOD = 7
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MODELS_DIR = REPO_ROOT / "models" / "predict_company_tickets"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 CSV_PATH = REPO_ROOT / "data" / "rows.csv"
+# %%
 
 
 def train_lightgbm(series: pd.Series, forecast_days=FORECAST_DAYS):
@@ -54,6 +56,7 @@ def train_lightgbm(series: pd.Series, forecast_days=FORECAST_DAYS):
     return {"model": model, "mse": mse, "mae": mae, "rmse": rmse, "r2": r2}
 
 
+# %%
 def train_sarimax(series: pd.Series, seasonal_period=SEASONAL_PERIOD):
     if len(series) < 2:
         return None
@@ -94,6 +97,7 @@ def main():
     df = parse_and_prep(str(CSV_PATH), "Company")
     top_companies = df["Company"].value_counts().head(5).index.tolist()
     import joblib
+    from src.services.predict_company.plot_utils import plot_predictions
 
     for comp in top_companies:
         print(f"Treinando modelos para: {comp}")
@@ -105,6 +109,13 @@ def main():
         lgbm = train_lightgbm(series)
         # LightGBM
         if lgbm:
+            test_size = min(90, int(len(series) * 0.3))
+            train = series.iloc[:-test_size]
+            test = series.iloc[-test_size:]
+            y_pred = lgbm["model"].predict(
+                create_lgb_features(series).iloc[-test_size:].drop(columns=["y"])
+            )
+            plt_path = plot_predictions(train, test, y_pred, f"{comp}_LGBM")
             with mlflow.start_run(run_name=f"{comp}_LGBM"):
                 best = lgbm["model"]
                 print(f"  ✓ LightGBM treinado para {comp}")
@@ -127,8 +138,21 @@ def main():
                         "n_estimators": 500,
                     }
                 )
+                mlflow.log_artifact(str(plt_path), artifact_path="plots")
         # SARIMAX
         if sarimax:
+            test_size = min(90, int(len(series) * 0.3))
+            train = series.iloc[:-test_size]
+            test = series.iloc[-test_size:]
+            if test_size > 0:
+                y_pred = (
+                    sarimax["model"]
+                    .get_prediction(start=test.index[0], end=test.index[-1])
+                    .predicted_mean
+                )
+                plt_path = plot_predictions(train, test, y_pred, f"{comp}_SARIMAX")
+            else:
+                plt_path = None
             with mlflow.start_run(run_name=f"{comp}_SARIMAX"):
                 best = sarimax["model"]
                 print(f"  ✓ SARIMAX treinado para {comp}")
@@ -144,6 +168,8 @@ def main():
                 mlflow.log_params(
                     {"order": "(1, 1, 1)", "seasonal_order": "(1, 0, 1, 7)"}
                 )
+                if plt_path:
+                    mlflow.log_artifact(str(plt_path), artifact_path="plots")
         # Salvar apenas o melhor modelo localmente como _BEST.pkl
         if lgbm and sarimax:
             # Critério: menor MSE, se igual, maior R2
@@ -169,5 +195,6 @@ def main():
         print(f"  ✓ Modelos treinados e salvos para {comp}")
 
 
+# %%
 if __name__ == "__main__":
     main()
