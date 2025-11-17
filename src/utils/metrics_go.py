@@ -105,11 +105,20 @@ def extract_metric(data, metric_name):
     raise Exception(f"Métrica '{metric_name}' não encontrada!")
 
 def prepare_chart_data(values):
-    labels = [item["name"] for item in values]
-    numbers = [item["value"] for item in values]
+    labels = []
+    numbers = []
+
+    for item in values:
+        label = item.get("name")
+        number = item.get("value")
+
+        if label == "N/A":
+            continue  # ignora
+
+        labels.append(label)
+        numbers.append(number)
+
     return labels, numbers
-
-
 import matplotlib.pyplot as plt
 
 def plot_pie(labels, values, title, output_path):
@@ -147,6 +156,7 @@ def generate_all_charts(tickets_data, qtd_month_data):
 
     # ---- TicketsByTag (barra)
     tag_values = extract_metric(data, "TicketsByTag")
+    tag_values = {k: v for k, v in tag_values.items() if k != "N/A"}
     labels, values = prepare_chart_data(tag_values)
     plot_bar(labels, values, "Tickets por Tag", "charts/tickets_by_tag.png")
 
