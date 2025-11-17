@@ -14,6 +14,14 @@ from prophet.serialize import model_from_json
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import logging
+from fastapi.responses import FileResponse
+from src.utils.dash_export import  generate_forecast_pdf
+from src.utils.client_service_go import extract_metric, prepare_chart_data, plot_pie, plot_bar, get_tickets, token, BASE_URL, plot_line_qtd_month, qtd_month, qtd_tkt_priority, plot_line_qtd_priority_month, qtd_tkt_status, plot_line_qtd_status_month
+from src.services.predict_company.analyse_company import plot_results
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import inch
 
 # Adicionar caminho do projeto para importar módulos compartilhados
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -247,7 +255,6 @@ def load_best_model_and_predict(
         _format_series_dict,
     )
     import numpy as np
-
     df = parse_and_prep(csv_path, group_col)
     top_values = df[group_col].value_counts().head(5).index.tolist()
     results = []
@@ -363,6 +370,149 @@ def predict_product(days: int = 30, historical_days: int = 60):
         )
     return JSONResponse(status_code=200, content=res)
 
+#Endpoint para exportar PDF de previsões
+@app.get("/export_forecast_pdf", response_model=PredictionResponse)
+def export_forecast_pdf(days: int = 30, historical_days: int = 60):
+    """
+    Gera um PDF único contendo gráficos de:
+    - Previsões por Company
+    - Previsões por Product
+    Reutilizando 100% da lógica já existente.
+    """
+    res_company = load_best_model_and_predict(
+        "Company",
+        models_dir="models/predict_company_tickets",
+        csv_path="data/rows.csv",
+        forecast_days=days,
+        historical_days=historical_days,
+    )
 
+    res_product = load_best_model_and_predict(
+        "Product",
+        models_dir="models/predict_product_tickets",
+        csv_path="data/rows.csv",
+        forecast_days=days,
+        historical_days=historical_days,
+    )
+    if not res_company["best_models_summary"] and not res_product["best_models_summary"]:
+        raise HTTPException(status_code=500, detail="Nenhuma previsão disponível.")
+
+    forecasts_summary = {}
+
+    for item in res_company["best_models_summary"]:
+        company = item.get("company") or item.get("Company")
+        forecasts_summary[f"Company - {company}"] = {
+            "raw_series": item["historical"],
+            "forecast": item["predictions"],
+            "best_model": item["model_name"],
+        }
+
+    for item in res_product["best_models_summary"]:
+        product = item.get("product") or item.get("Product")
+        forecasts_summary[f"Product - {product}"] = {
+            "raw_series": item["historical"],
+            "forecast": item["predictions"],
+            "best_model": item["model_name"],
+        }
+
+    saved_charts = plot_results(
+        forecasts_summary=forecasts_summary
+    )
+
+    pdf_filename = f"relatorio_previsoes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    generate_forecast_pdf(saved_charts, output_file=pdf_filename)
+
+    return FileResponse(
+        pdf_filename,
+        media_type="application/pdf",
+        filename=pdf_filename,
+    )
+
+# Endpoint para exportar PDF de métricas
+@app.get("/export_metrics_pdf")
+def export_metrics_pdf():
+    tickets = get_tickets(BASE_URL, token)
+
+    if "data" not in tickets:
+        raise HTTPException(500, "Retorno inválido da API de métricas")
+
+    data = tickets["data"]
+
+    pdf_filename = f"relatorio_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    doc = SimpleDocTemplate(pdf_filename, pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
+
+    story.append(Paragraph("<b>Relatório de Métricas de Tickets</b>", styles["Title"]))
+    story.append(Spacer(1, 20))
+
+    total = data["totalTickets"]
+    story.append(Paragraph(f"<b>Total de Tickets:</b> {total}", styles["Heading2"]))
+    story.append(Spacer(1, 12))
+
+    os.makedirs("charts_metrics", exist_ok=True)
+    plot_line_qtd_month(qtd_month, "charts_metrics/tickets_by_month.png")
+
+    charts = [
+        ("Tickets por Canal", "charts_metrics/tickets_by_channel.png", "TicketsByChannel"),
+        ("Tickets por Categoria", "charts_metrics/tickets_by_category.png", "TicketsByCategory"),
+        ("Tickets por Tag", "charts_metrics/tickets_by_tag.png", "TicketsByTag"),
+        ("Tickets por Departamento", "charts_metrics/tickets_by_department.png", "TicketsByDepartment"),
+        ("Tickets por Mês", "charts_metrics/tickets_by_month.png", "TicketsByMonth"),
+    ]
+
+    for titulo, path, metric_name in charts:
+
+        story.append(Paragraph(f"<b>{titulo}:</b>", styles["Heading2"]))
+        story.append(Spacer(1, 6))
+
+        if metric_name != "TicketsByMonth":
+            vals = extract_metric(data, metric_name)
+            labels, values = prepare_chart_data(vals)
+            if "Canal" in titulo or "Categoria" in titulo:
+                plot_pie(labels, values, titulo, path)
+            else:
+                plot_bar(labels, values, titulo, path)
+            for label, value in zip(labels, values):
+                story.append(Paragraph(f"{label}: {value}", styles["Normal"]))
+
+            story.append(Spacer(1, 10))
+        story.append(Image(path, width=5*inch, height=3*inch))
+        story.append(Spacer(1, 20))
+    priority_data = qtd_tkt_priority["data"]
+
+    resultados = plot_line_qtd_priority_month(priority_data)
+
+    for item in resultados:
+        story.append(Paragraph(f"<b>{item['titulo']}</b>", styles["Heading2"]))
+        story.append(Spacer(1, 4))
+
+        story.append(Paragraph(item["texto"], styles["Normal"]))
+        story.append(Spacer(1, 12))
+
+        story.append(Image(item["imagem"], width=5*inch, height=3*inch))
+        story.append(Spacer(1, 25))
+
+    status_data = qtd_tkt_status["data"]
+    resultados2 = plot_line_qtd_status_month(status_data)
+
+    for item in resultados2:
+        story.append(Paragraph(f"<b>{item['titulo']}</b>", styles["Heading2"]))
+        story.append(Spacer(1, 4))
+
+        story.append(Paragraph(item["texto"], styles["Normal"]))
+        story.append(Spacer(1, 12))
+
+        story.append(Image(item["imagem"], width=5*inch, height=3*inch))
+        story.append(Spacer(1, 25))
+
+
+    doc.build(story)
+
+    return FileResponse(
+        pdf_filename,
+        media_type="application/pdf",
+        filename=pdf_filename,
+    )
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
