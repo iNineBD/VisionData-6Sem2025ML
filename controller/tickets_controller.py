@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 from fastapi.responses import FileResponse
 from src.utils.dash_export import  generate_forecast_pdf
-from src.utils.client_service_go import extract_metric, prepare_chart_data, plot_pie, plot_bar, get_tickets, token, BASE_URL, plot_line_qtd_month, qtd_month, qtd_tkt_priority, plot_line_qtd_priority_month, qtd_tkt_status, plot_line_qtd_status_month
+from src.utils.metrics_go import extract_metric, prepare_chart_data, plot_pie, plot_bar, get_tickets, token, BASE_URL, plot_line_qtd_month, qtd_month, qtd_tkt_priority, plot_line_qtd_priority_month, qtd_tkt_status, plot_line_qtd_status_month
 from src.services.predict_company.analyse_company import plot_results
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet
