@@ -9,15 +9,16 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import warnings
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 import lightgbm as lgb
+from datetime import datetime
+from src.utils.dash_export import generate_forecast_pdf
+from io import BytesIO
 
-# %%
+
 warnings.filterwarnings("ignore")
 
 FORECAST_DAYS = 30
 SEASONAL_PERIOD = 7
 CSV_PATH = "data/rows.csv"
-
-# %%
 
 
 # funções de preparação de dados
@@ -377,16 +378,21 @@ def run_pipeline(CSV_PATH: str):
 
     return forecasts_summary
 
-
 def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
-    """Gera gráficos comparativos das previsões e desempenho no teste."""
+    """
+    Gera gráficos em memória (bytes PNG) para cada previsão.
+    """
+
     if not forecasts_summary:
         print("Não há resultados para plotar.")
-        return
+        return []
 
     sns.set_style("whitegrid")
 
+    results = []
+
     for comp, data in forecasts_summary.items():
+
         series_data = data.get("raw_series")
         if isinstance(series_data, dict):
             series = pd.Series(series_data)
@@ -397,11 +403,11 @@ def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
         if series is None or series.empty:
             continue
 
-        # Pega previsões de SARIMAX / LGBM
+        # Previsões SARIMAX / LGBM
         preds_sar = pd.Series(data.get("sar_preds", {}))
         preds_lgb = pd.Series(data.get("lgb_preds", {}))
 
-        # Se não existirem previsões separadas, pega apenas a 'forecast'
+        # fallback caso só exista "forecast"
         if preds_sar.empty and preds_lgb.empty and "forecast" in data:
             preds = pd.Series(data["forecast"])
             preds.index = pd.to_datetime(preds.index)
@@ -410,11 +416,10 @@ def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
             else:
                 preds_lgb = preds
 
-        # Dados de teste (reais e previstos)
+        # Teste real e previsto
         y_test = data.get("y_test")
         y_pred_test = data.get("y_pred_test")
 
-        # Converter se vier como dict
         if isinstance(y_test, dict):
             y_test = pd.Series(y_test)
             y_test.index = pd.to_datetime(y_test.index)
@@ -422,81 +427,97 @@ def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
             y_pred_test = pd.Series(y_pred_test)
             y_pred_test.index = pd.to_datetime(y_pred_test.index)
 
-        # Determina o histórico a mostrar
+        # Janela a plotar
         start_date = series.index[-1] - pd.Timedelta(days=historical_days - 1)
         plot_series = series.loc[start_date:]
 
-        plt.figure(figsize=(14, 6))
+        # Criar figura
+        fig = plt.figure(figsize=(10, 8))
 
-        # Histórico (treino)
+        # Histórico
         plt.plot(
             plot_series.index,
             plot_series.values,
             label="Histórico (Treino)",
-            color="tab:blue",
+            color="#4B0082",
             linewidth=2,
         )
 
-        # Dados de Teste Reais
+        # Teste real
         if y_test is not None and not y_test.empty:
             plt.plot(
                 y_test.index,
                 y_test.values,
                 label="Teste (Real)",
                 color="tab:gray",
-                linestyle="-",
                 linewidth=2,
             )
 
-        # Predições no Teste
+        # Teste previsto
         if y_pred_test is not None and not y_pred_test.empty:
             plt.plot(
                 y_pred_test.index,
                 y_pred_test.values,
                 label="Teste (Previsto)",
-                color="tab:purple",
+                color="#FF1493",
                 linestyle="--",
                 linewidth=2,
             )
 
-        # Previsões futuras
+        # Futuro SARIMAX
         if not preds_sar.empty:
             plt.plot(
                 preds_sar.index,
                 preds_sar.values,
                 label="SARIMAX Futuro",
-                color="tab:orange",
+                color="#FF69B4",
                 linestyle="--",
             )
+
+        # Futuro LGBM
         if not preds_lgb.empty:
             plt.plot(
                 preds_lgb.index,
                 preds_lgb.values,
                 label="LightGBM Futuro",
-                color="tab:green",
+                color="#FF69B4",
                 linestyle="--",
             )
 
-        # Linha separadora entre histórico/teste/futuro
-        last_date_hist = series.index[-1]
+        # Linha separadora
+        last_date = series.index[-1]
         plt.axvline(
-            x=last_date_hist, color="red", linestyle=":", label="Início da Previsão"
+            x=last_date,
+            color="#808080",
+            linestyle=":",
+            linewidth=2,
+            label="Início da Previsão",
         )
 
-        # Título e labels
+        # Labels
         best_model = data.get("best_model", "Desconhecido")
         plt.title(f"Previsão de Tickets para {comp} ({best_model})", fontsize=16)
-        plt.xlabel("Data", fontsize=12)
-        plt.ylabel("Número de Tickets", fontsize=12)
-        plt.legend(loc="best")
+        plt.xlabel("Data")
+        plt.ylabel("Número de Tickets")
+        plt.legend()
         plt.tight_layout()
-        plt.show()
 
+        # Salvar em memória
+        buffer = BytesIO()
+        fig.savefig(buffer, format="png", dpi=150)
+        buffer.seek(0)
 
-print("Iniciando o Pipeline de Previsão...")
-forecast_summary = run_pipeline("data/rows.csv")
-if forecast_summary:
-    print("\n" + "=" * 50)
-    print("Gerando Gráficos de Previsão...")
-    print("=" * 50)
-    plot_results(forecast_summary)
+        plt.close(fig)
+
+        texto = (
+            f"A previsão para <b>{comp}</b> utiliza o modelo <b>{best_model}</b>. "
+            f"A linha cinza marca o início da previsão."
+        )
+
+        results.append({
+            "titulo": f"{comp}",
+            "texto": texto,
+            "imagem": buffer.getvalue()
+        })
+
+    return results
