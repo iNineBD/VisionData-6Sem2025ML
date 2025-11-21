@@ -1,5 +1,5 @@
 import requests
-
+import os
 PALETTE = [
     "#ff9ce6",  
     "#ff5ac8",  
@@ -11,6 +11,9 @@ PALETTE = [
     "#3a0ca3",      
     "#4361ee",  
 ]
+BASE_URL = os.getenv("TARGET_API_URL")
+TARGET_USER_EMAIL = os.getenv("TARGET_USER_EMAIL")
+TARGET_USER_PASSWORD = os.getenv("TARGET_USER_PASSWORD")
 def login(base_url: str, email: str, password: str) -> str:
     url = f"{base_url}/auth/login"
 
@@ -65,9 +68,7 @@ def get_qtd_tickets_by_priority_year_month(base_url, token):
 def get_qtd_tickets_by_status_year_month(base_url, token):
     return get_with_token(base_url, "/metrics/tickets/qtd-tickets-by-status-year-month", token)
 
-BASE_URL = "http://localhost:8080"
-
-token = login(BASE_URL, "joao@example.com", "SenhaSegura@123")
+token = login(BASE_URL, TARGET_USER_EMAIL, TARGET_USER_PASSWORD)
 
 # print("TOKEN:", token)
 

@@ -2,10 +2,18 @@ services:
   app:
     build: .
     container_name: predict_tickets_app
+    env_file:
+      - .env
     environment:
       - GIT_PYTHON_REFRESH=quiet
+      - TARGET_API_URL
+      - TARGET_USER_EMAIL
+      - TARGET_USER_PASSWORD
     ports:
       - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    
 
   mlflow:
     image: ghcr.io/mlflow/mlflow:v3.5.0
