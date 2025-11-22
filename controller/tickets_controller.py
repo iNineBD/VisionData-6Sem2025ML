@@ -15,8 +15,22 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 from fastapi.responses import FileResponse
-from src.utils.dash_export import  generate_forecast_pdf
-from src.utils.metrics_go import extract_metric, prepare_chart_data, plot_pie, plot_bar, get_tickets, token, BASE_URL, plot_line_qtd_month, qtd_month, qtd_tkt_priority, plot_line_qtd_priority_month, qtd_tkt_status, plot_line_qtd_status_month
+from src.utils.dash_export import generate_forecast_pdf
+from src.utils.metrics_go import (
+    extract_metric,
+    prepare_chart_data,
+    plot_pie,
+    plot_bar,
+    get_tickets,
+    token,
+    BASE_URL,
+    plot_line_qtd_month,
+    qtd_month,
+    qtd_tkt_priority,
+    plot_line_qtd_priority_month,
+    qtd_tkt_status,
+    plot_line_qtd_status_month,
+)
 from src.services.predict_company.analyse_company import plot_results
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet
@@ -256,6 +270,7 @@ def load_best_model_and_predict(
         _format_series_dict,
     )
     import numpy as np
+
     df = parse_and_prep(csv_path, group_col)
     top_values = df[group_col].value_counts().head(5).index.tolist()
     results = []
@@ -371,7 +386,8 @@ def predict_product(days: int = 30, historical_days: int = 60):
         )
     return JSONResponse(status_code=200, content=res)
 
-#Endpoint para exportar PDF de previsões
+
+# Endpoint para exportar PDF de previsões
 @app.get("/export_forecast_pdf", response_model=PredictionResponse)
 def export_forecast_pdf(days: int = 30, historical_days: int = 60):
     """
@@ -387,18 +403,15 @@ def export_forecast_pdf(days: int = 30, historical_days: int = 60):
         try:
             total_hist_df = loaded_data.tail(historical_days).copy()
             total_pred_df = predict_future(days=days)
-            
+
             img_bytes = plot_total_forecast_image(
                 historical_df=total_hist_df,
                 predictions_df=total_pred_df,
-                title=f"Total - Previsão ({ACTIVE_MODEL.upper()})"
+                title=f"Total - Previsão ({ACTIVE_MODEL.upper()})",
             )
 
-            saved_charts.append({
-                "titulo": "Total - Visão Geral",
-                "imagem": img_bytes
-            })
-                        
+            saved_charts.append({"titulo": "Total - Visão Geral", "imagem": img_bytes})
+
         except Exception as e:
             print(f"Erro ao gerar previsão total para o PDF: {e}")
     else:
@@ -419,7 +432,10 @@ def export_forecast_pdf(days: int = 30, historical_days: int = 60):
         forecast_days=days,
         historical_days=historical_days,
     )
-    if not res_company["best_models_summary"] and not res_product["best_models_summary"]:
+    if (
+        not res_company["best_models_summary"]
+        and not res_product["best_models_summary"]
+    ):
         raise HTTPException(status_code=500, detail="Nenhuma previsão disponível.")
 
     forecasts_summary = {}
@@ -440,11 +456,12 @@ def export_forecast_pdf(days: int = 30, historical_days: int = 60):
             "best_model": item["model_name"],
         }
     if not forecasts_summary:
-        raise HTTPException(status_code=500, detail="Nenhuma previsão (Total, Company ou Product) disponível para gerar o PDF.")
+        raise HTTPException(
+            status_code=500,
+            detail="Nenhuma previsão (Total, Company ou Product) disponível para gerar o PDF.",
+        )
 
-    saved_charts += plot_results(
-        forecasts_summary=forecasts_summary
-    )
+    saved_charts += plot_results(forecasts_summary=forecasts_summary)
 
     pdf_filename = f"relatorio_previsoes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
     generate_forecast_pdf(saved_charts, output_file=pdf_filename)
@@ -454,6 +471,7 @@ def export_forecast_pdf(days: int = 30, historical_days: int = 60):
         media_type="application/pdf",
         filename=pdf_filename,
     )
+
 
 # Endpoint para exportar PDF de métricas
 @app.get("/export_metrics_pdf")
@@ -481,10 +499,22 @@ def export_metrics_pdf():
     plot_line_qtd_month(qtd_month, "charts_metrics/tickets_by_month.png")
 
     charts = [
-        ("Tickets por Canal", "charts_metrics/tickets_by_channel.png", "TicketsByChannel"),
-        ("Tickets por Categoria", "charts_metrics/tickets_by_category.png", "TicketsByCategory"),
+        (
+            "Tickets por Canal",
+            "charts_metrics/tickets_by_channel.png",
+            "TicketsByChannel",
+        ),
+        (
+            "Tickets por Categoria",
+            "charts_metrics/tickets_by_category.png",
+            "TicketsByCategory",
+        ),
         ("Tickets por Tag", "charts_metrics/tickets_by_tag.png", "TicketsByTag"),
-        ("Tickets por Departamento", "charts_metrics/tickets_by_department.png", "TicketsByDepartment"),
+        (
+            "Tickets por Departamento",
+            "charts_metrics/tickets_by_department.png",
+            "TicketsByDepartment",
+        ),
         ("Tickets por Mês", "charts_metrics/tickets_by_month.png", "TicketsByMonth"),
     ]
 
@@ -504,7 +534,7 @@ def export_metrics_pdf():
                 story.append(Paragraph(f"{label}: {value}", styles["Normal"]))
 
             story.append(Spacer(1, 10))
-        story.append(Image(path, width=5*inch, height=3*inch))
+        story.append(Image(path, width=5 * inch, height=3 * inch))
         story.append(Spacer(1, 20))
     priority_data = qtd_tkt_priority["data"]
 
@@ -517,7 +547,7 @@ def export_metrics_pdf():
         story.append(Paragraph(item["texto"], styles["Normal"]))
         story.append(Spacer(1, 12))
 
-        story.append(Image(item["imagem"], width=5*inch, height=3*inch))
+        story.append(Image(item["imagem"], width=5 * inch, height=3 * inch))
         story.append(Spacer(1, 25))
 
     status_data = qtd_tkt_status["data"]
@@ -530,9 +560,8 @@ def export_metrics_pdf():
         story.append(Paragraph(item["texto"], styles["Normal"]))
         story.append(Spacer(1, 12))
 
-        story.append(Image(item["imagem"], width=5*inch, height=3*inch))
+        story.append(Image(item["imagem"], width=5 * inch, height=3 * inch))
         story.append(Spacer(1, 25))
-
 
     doc.build(story)
 
@@ -541,5 +570,7 @@ def export_metrics_pdf():
         media_type="application/pdf",
         filename=pdf_filename,
     )
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

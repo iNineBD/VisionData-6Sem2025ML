@@ -376,6 +376,7 @@ def run_pipeline(CSV_PATH: str):
 
     return forecasts_summary
 
+
 def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
     """
     Gera gráficos em memória (bytes PNG) para cada previsão.
@@ -512,10 +513,8 @@ def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
             f"A linha cinza marca o início da previsão."
         )
 
-        results.append({
-            "titulo": f"{comp}",
-            "texto": texto,
-            "imagem": buffer.getvalue()
-        })
+        results.append(
+            {"titulo": f"{comp}", "texto": texto, "imagem": buffer.getvalue()}
+        )
 
     return results

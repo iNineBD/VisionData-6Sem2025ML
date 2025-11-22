@@ -24,7 +24,10 @@ def plot_predictions(train, test, pred, name):
     plt.close()
     return plt_path
 
-def plot_total_forecast_image(historical_df, predictions_df, title="Total - Previsão Geral"):
+
+def plot_total_forecast_image(
+    historical_df, predictions_df, title="Total - Previsão Geral"
+):
     plt.figure(figsize=(12, 6))
 
     plt.plot(
@@ -38,8 +41,8 @@ def plot_total_forecast_image(historical_df, predictions_df, title="Total - Prev
         predictions_df["date"],
         predictions_df["ticket_count"],
         label="Previsão",
-        color= "#ff5ac8",
-        linestyle="--"
+        color="#ff5ac8",
+        linestyle="--",
     )
 
     plt.title(title)
