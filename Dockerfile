@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
 WORKDIR /app
+ENV PYTHONPATH=/app
 
 # Instalar dependências do sistema necessárias
 RUN apt-get update && \

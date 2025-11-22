@@ -1,16 +1,23 @@
 import requests
+import os
+import matplotlib.pyplot as plt
 
 PALETTE = [
-    "#ff9ce6",  
-    "#ff5ac8",  
-    "#c77dff",  
-    "#9d4edd",  
-    "#7b2cbf",  
-    "#5a4fcf",  
-    "#4d6aff",  
-    "#3a0ca3",      
-    "#4361ee",  
+    "#ff9ce6",
+    "#ff5ac8",
+    "#c77dff",
+    "#9d4edd",
+    "#7b2cbf",
+    "#5a4fcf",
+    "#4d6aff",
+    "#3a0ca3",
+    "#4361ee",
 ]
+BASE_URL = os.getenv("TARGET_API_URL")
+TARGET_USER_EMAIL = os.getenv("TARGET_USER_EMAIL")
+TARGET_USER_PASSWORD = os.getenv("TARGET_USER_PASSWORD")
+
+
 def login(base_url: str, email: str, password: str) -> str:
     url = f"{base_url}/auth/login"
 
@@ -18,27 +25,26 @@ def login(base_url: str, email: str, password: str) -> str:
         "email": email,
         "login_type": "password",
         "microsoft_id_token": "",
-        "password": password
+        "password": password,
     }
 
     response = requests.post(url, json=payload)
-    
+
     if response.status_code != 200:
         raise Exception(f"Erro no login: {response.status_code} {response.text}")
 
     data = response.json()
-    
+
     if not data.get("success"):
         raise Exception("Login falhou")
 
     return data["data"]["token"]
 
+
 def get_with_token(base_url: str, endpoint: str, token: str):
     url = f"{base_url}{endpoint}"
 
-    headers = {
-        "Authorization": f"Bearer {token}"
-    }
+    headers = {"Authorization": f"Bearer {token}"}
 
     response = requests.get(url, headers=headers)
 
@@ -46,28 +52,40 @@ def get_with_token(base_url: str, endpoint: str, token: str):
         raise Exception("Token expirado ou inválido")
 
     if response.status_code >= 400:
-        raise Exception(f"Erro ao acessar {endpoint}: {response.status_code} {response.text}")
+        raise Exception(
+            f"Erro ao acessar {endpoint}: {response.status_code} {response.text}"
+        )
 
     return response.json()
+
 
 def get_tickets(base_url, token):
     return get_with_token(base_url, "/metrics/tickets", token)
 
+
 def get_mean_resolution(base_url, token):
-    return get_with_token(base_url, "/metrics/tickets/mean-time-resolution-by-priority", token)
+    return get_with_token(
+        base_url, "/metrics/tickets/mean-time-resolution-by-priority", token
+    )
+
 
 def get_qtd_by_month(base_url, token):
     return get_with_token(base_url, "/metrics/tickets/qtd-tickets-by-month", token)
 
+
 def get_qtd_tickets_by_priority_year_month(base_url, token):
-    return get_with_token(base_url, "/metrics/tickets/qtd-tickets-by-priority-year-month", token)
+    return get_with_token(
+        base_url, "/metrics/tickets/qtd-tickets-by-priority-year-month", token
+    )
+
 
 def get_qtd_tickets_by_status_year_month(base_url, token):
-    return get_with_token(base_url, "/metrics/tickets/qtd-tickets-by-status-year-month", token)
+    return get_with_token(
+        base_url, "/metrics/tickets/qtd-tickets-by-status-year-month", token
+    )
 
-BASE_URL = "http://localhost:8080"
 
-token = login(BASE_URL, "joao@example.com", "SenhaSegura@123")
+token = login(BASE_URL, TARGET_USER_EMAIL, TARGET_USER_PASSWORD)
 
 # print("TOKEN:", token)
 
@@ -90,6 +108,7 @@ qtd_tkt_status = get_qtd_tickets_by_status_year_month(BASE_URL, token)
 # print("----------------------")
 tickets
 
+
 def extract_metric(data, metric_name):
     """
     Procura no array data["metrics"] o item com name == metric_name.
@@ -103,6 +122,7 @@ def extract_metric(data, metric_name):
             return metric.get("values", [])
 
     raise Exception(f"Métrica '{metric_name}' não encontrada!")
+
 
 def prepare_chart_data(values):
     labels = []
@@ -119,20 +139,21 @@ def prepare_chart_data(values):
         numbers.append(number)
 
     return labels, numbers
-import matplotlib.pyplot as plt
+
 
 def plot_pie(labels, values, title, output_path):
     plt.figure(figsize=(6, 4))
-    colors = PALETTE[:len(values)] 
-    plt.pie(values, labels=labels, autopct='%1.1f%%', colors=colors)
+    colors = PALETTE[: len(values)]
+    plt.pie(values, labels=labels, autopct="%1.1f%%", colors=colors)
     plt.title(title)
     plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
 
+
 def plot_bar(labels, values, title, output_path):
     plt.figure(figsize=(8, 5))
-    colors = PALETTE[:len(labels)]
+    colors = PALETTE[: len(labels)]
     plt.bar(labels, values, color=colors)
     plt.xticks(rotation=45, ha="right")
     plt.ylabel("Quantidade")
@@ -140,6 +161,7 @@ def plot_bar(labels, values, title, output_path):
     plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
+
 
 def generate_all_charts(tickets_data, qtd_month_data):
     data = tickets_data["data"]
@@ -163,14 +185,28 @@ def generate_all_charts(tickets_data, qtd_month_data):
     # ---- TicketsByDepartment (barra)
     dep_values = extract_metric(data, "TicketsByDepartment")
     labels, values = prepare_chart_data(dep_values)
-    plot_bar(labels, values, "Tickets por Departamento", "charts/tickets_by_department.png")
+    plot_bar(
+        labels, values, "Tickets por Departamento", "charts/tickets_by_department.png"
+    )
 
     plot_line_qtd_month(qtd_month_data, "charts/tickets_by_month.png")
 
+
 ORDERED_MONTHS = [
-    "janeiro", "fevereiro", "marco", "abril", "maio", "junho",
-    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+    "janeiro",
+    "fevereiro",
+    "marco",
+    "abril",
+    "maio",
+    "junho",
+    "julho",
+    "agosto",
+    "setembro",
+    "outubro",
+    "novembro",
+    "dezembro",
 ]
+
 
 def plot_line_qtd_month(qtd_month_data, output_path="charts/qtd_by_month.png"):
     data = qtd_month_data["data"]
@@ -196,14 +232,12 @@ def plot_line_qtd_month(qtd_month_data, output_path="charts/qtd_by_month.png"):
     plt.savefig(output_path)
     plt.close()
 
-import os
+
 def plot_line_qtd_priority_month(data_priority, output_dir="charts_priority"):
     """
     Gera um gráfico por ANO contendo todas as prioridades juntas.
     Cada prioridade aparece como uma linha no gráfico usando as cores da PALETTE.
     """
-
-    import os
     os.makedirs(output_dir, exist_ok=True)
 
     resultados_pdf = []
@@ -237,12 +271,7 @@ def plot_line_qtd_priority_month(data_priority, output_dir="charts_priority"):
             cor = PALETTE[idx % len(PALETTE)]
 
             plt.plot(
-                meses,
-                valores,
-                marker="o",
-                linewidth=2,
-                label=prioridade,
-                color=cor
+                meses, valores, marker="o", linewidth=2, label=prioridade, color=cor
             )
 
         plt.title(f"Tickets por Prioridade • {ano}")
@@ -262,14 +291,17 @@ def plot_line_qtd_priority_month(data_priority, output_dir="charts_priority"):
             f"Foram registrados <b>{total_ano_global}</b> tickets no total."
         )
 
-        resultados_pdf.append({
-            "ano": ano,
-            "titulo": f"Prioridades - {ano}",
-            "texto": texto,
-            "imagem": filename
-        })
+        resultados_pdf.append(
+            {
+                "ano": ano,
+                "titulo": f"Prioridades - {ano}",
+                "texto": texto,
+                "imagem": filename,
+            }
+        )
 
     return resultados_pdf
+
 
 def plot_line_qtd_status_month(data_status, output_dir="charts_status"):
     """
@@ -277,11 +309,9 @@ def plot_line_qtd_status_month(data_status, output_dir="charts_status"):
     Cada status usa uma cor da PALETTE.
     """
 
-    import os
     os.makedirs(output_dir, exist_ok=True)
 
     resultados_pdf = []
-
 
     anos_disponiveis = set()
     for status, anos in data_status.items():
@@ -302,7 +332,7 @@ def plot_line_qtd_status_month(data_status, output_dir="charts_status"):
             if ano not in anos:
                 continue
 
-            valores_dict = anos[ano][0] 
+            valores_dict = anos[ano][0]
 
             meses = ORDERED_MONTHS
             valores = [valores_dict.get(m, 0) for m in meses]
@@ -311,14 +341,7 @@ def plot_line_qtd_status_month(data_status, output_dir="charts_status"):
 
             cor = PALETTE[idx % len(PALETTE)]
 
-            plt.plot(
-                meses,
-                valores,
-                marker="o",
-                linewidth=2,
-                label=status,
-                color=cor
-            )
+            plt.plot(meses, valores, marker="o", linewidth=2, label=status, color=cor)
 
         plt.title(f"Tickets por Status • {ano}")
         plt.xlabel("Mês")
@@ -337,11 +360,13 @@ def plot_line_qtd_status_month(data_status, output_dir="charts_status"):
             f"Foram registrados <b>{total_ano_global}</b> tickets no total."
         )
 
-        resultados_pdf.append({
-            "ano": ano,
-            "titulo": f"Status - {ano}",
-            "texto": texto,
-            "imagem": filename
-        })
+        resultados_pdf.append(
+            {
+                "ano": ano,
+                "titulo": f"Status - {ano}",
+                "texto": texto,
+                "imagem": filename,
+            }
+        )
 
     return resultados_pdf

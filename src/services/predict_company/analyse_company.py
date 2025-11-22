@@ -9,8 +9,6 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import warnings
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 import lightgbm as lgb
-from datetime import datetime
-from src.utils.dash_export import generate_forecast_pdf
 from io import BytesIO
 
 
@@ -378,6 +376,7 @@ def run_pipeline(CSV_PATH: str):
 
     return forecasts_summary
 
+
 def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
     """
     Gera gráficos em memória (bytes PNG) para cada previsão.
@@ -432,7 +431,7 @@ def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
         plot_series = series.loc[start_date:]
 
         # Criar figura
-        fig = plt.figure(figsize=(10, 8))
+        fig = plt.figure(figsize=(12, 6))
 
         # Histórico
         plt.plot(
@@ -514,10 +513,8 @@ def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
             f"A linha cinza marca o início da previsão."
         )
 
-        results.append({
-            "titulo": f"{comp}",
-            "texto": texto,
-            "imagem": buffer.getvalue()
-        })
+        results.append(
+            {"titulo": f"{comp}", "texto": texto, "imagem": buffer.getvalue()}
+        )
 
     return results
