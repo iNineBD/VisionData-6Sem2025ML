@@ -432,7 +432,7 @@ def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
         plot_series = series.loc[start_date:]
 
         # Criar figura
-        fig = plt.figure(figsize=(10, 8))
+        fig = plt.figure(figsize=(12, 6))
 
         # Histórico
         plt.plot(

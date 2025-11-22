@@ -22,6 +22,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
+from src.services.predict_all_tickets.plot_utils import plot_total_forecast_image
 
 # Adicionar caminho do projeto para importar módulos compartilhados
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -379,6 +380,30 @@ def export_forecast_pdf(days: int = 30, historical_days: int = 60):
     - Previsões por Product
     Reutilizando 100% da lógica já existente.
     """
+
+    forecasts_summary = {}
+    saved_charts = []
+    if loaded_data is not None and loaded_model is not None:
+        try:
+            total_hist_df = loaded_data.tail(historical_days).copy()
+            total_pred_df = predict_future(days=days)
+            
+            img_bytes = plot_total_forecast_image(
+                historical_df=total_hist_df,
+                predictions_df=total_pred_df,
+                title=f"Total - Previsão ({ACTIVE_MODEL.upper()})"
+            )
+
+            saved_charts.append({
+                "titulo": "Total - Visão Geral",
+                "imagem": img_bytes
+            })
+                        
+        except Exception as e:
+            print(f"Erro ao gerar previsão total para o PDF: {e}")
+    else:
+        print("Aviso: Modelo global não carregado, pulando gráfico tot")
+
     res_company = load_best_model_and_predict(
         "Company",
         models_dir="models/predict_company_tickets",
@@ -414,8 +439,10 @@ def export_forecast_pdf(days: int = 30, historical_days: int = 60):
             "forecast": item["predictions"],
             "best_model": item["model_name"],
         }
+    if not forecasts_summary:
+        raise HTTPException(status_code=500, detail="Nenhuma previsão (Total, Company ou Product) disponível para gerar o PDF.")
 
-    saved_charts = plot_results(
+    saved_charts += plot_results(
         forecasts_summary=forecasts_summary
     )
 

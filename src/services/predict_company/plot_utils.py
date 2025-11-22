@@ -7,7 +7,7 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def plot_predictions(train, test, pred, name):
-    plt.figure(figsize=(15, 7))
+    plt.figure(figsize=(12, 6))
     plt.plot(train.index, train, label="Treino", color="blue", linestyle="-")
     plt.plot(test.index, test, label="Teste", color="green", marker=".", linestyle="-")
     plt.plot(
