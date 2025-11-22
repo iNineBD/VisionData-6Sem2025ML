@@ -9,8 +9,6 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import warnings
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 import lightgbm as lgb
-from datetime import datetime
-from src.utils.dash_export import generate_forecast_pdf
 from io import BytesIO
 
 

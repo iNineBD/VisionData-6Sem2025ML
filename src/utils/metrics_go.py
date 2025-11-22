@@ -1,5 +1,6 @@
 import requests
 import os
+import matplotlib.pyplot as plt
 PALETTE = [
     "#ff9ce6",  
     "#ff5ac8",  
@@ -120,7 +121,6 @@ def prepare_chart_data(values):
         numbers.append(number)
 
     return labels, numbers
-import matplotlib.pyplot as plt
 
 def plot_pie(labels, values, title, output_path):
     plt.figure(figsize=(6, 4))
@@ -197,14 +197,11 @@ def plot_line_qtd_month(qtd_month_data, output_path="charts/qtd_by_month.png"):
     plt.savefig(output_path)
     plt.close()
 
-import os
 def plot_line_qtd_priority_month(data_priority, output_dir="charts_priority"):
     """
     Gera um gráfico por ANO contendo todas as prioridades juntas.
     Cada prioridade aparece como uma linha no gráfico usando as cores da PALETTE.
     """
-
-    import os
     os.makedirs(output_dir, exist_ok=True)
 
     resultados_pdf = []
@@ -278,7 +275,6 @@ def plot_line_qtd_status_month(data_status, output_dir="charts_status"):
     Cada status usa uma cor da PALETTE.
     """
 
-    import os
     os.makedirs(output_dir, exist_ok=True)
 
     resultados_pdf = []
