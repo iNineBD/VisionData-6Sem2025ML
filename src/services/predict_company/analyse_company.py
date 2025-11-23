@@ -9,34 +9,36 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import warnings
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 import lightgbm as lgb
+from io import BytesIO
 
-# %%
+
 warnings.filterwarnings("ignore")
 
-CSV_PATH = os.getenv("CSV_PATH")
-DATE_COL = os.getenv("DATE_COL")
-COMPANY_COL = os.getenv("COMPANY_COL")
 FORECAST_DAYS = 30
-SEASONAL_PERIOD = 7  # Sazonalidade diária -> 7 (semanal)
-METRICS_CSV = os.getenv("METRICS_CSV")
-# %%
+SEASONAL_PERIOD = 7
+CSV_PATH = "data/rows.csv"
 
 
-def parse_and_prep(csv_path: str) -> pd.DataFrame:
+# funções de preparação de dados
+def parse_and_prep(CSV_PATH: str) -> pd.DataFrame:
     """Carrega, limpa e prepara os dados de reclamações."""
     print("Iniciando preparação de dados...")
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Arquivo CSV não encontrado em: {csv_path}")
+    if not os.path.exists(CSV_PATH):
+        raise FileNotFoundError(f"Arquivo CSV não encontrado em: {CSV_PATH}")
 
-    df = pd.read_csv(csv_path, dtype=str)
+    df = pd.read_csv(CSV_PATH, dtype=str)
     df.columns = [c.strip() for c in df.columns]
-    if DATE_COL not in df.columns or COMPANY_COL not in df.columns:
-        raise ValueError(f"CSV precisa conter colunas '{DATE_COL}' e '{COMPANY_COL}'")
-    df[DATE_COL] = pd.to_datetime(df[DATE_COL], errors="coerce", dayfirst=False)
-    df = df.dropna(subset=[DATE_COL, COMPANY_COL])
-    df[COMPANY_COL] = df[COMPANY_COL].str.strip()
-    df = df[[DATE_COL, COMPANY_COL]]
-    df[DATE_COL] = df[DATE_COL].dt.normalize()
+    if "Date received" not in df.columns or "Company" not in df.columns:
+        raise ValueError(
+            f"CSV precisa conter colunas '{'Date received'}' e '{'Company'}'"
+        )
+    df["Date received"] = pd.to_datetime(
+        df["Date received"], errors="coerce", dayfirst=False
+    )
+    df = df.dropna(subset=["Date received", "Company"])
+    df["Company"] = df["Company"].str.strip()
+    df = df[["Date received", "Company"]]
+    df["Date received"] = df["Date received"].dt.normalize()
     print(f"Dados preparados. Total de linhas: {len(df)}")
     return df
 
@@ -44,18 +46,20 @@ def parse_and_prep(csv_path: str) -> pd.DataFrame:
 # %%
 
 
+# cria série temporal diária para uma companhia
 def make_daily_series(df: pd.DataFrame, company: str) -> pd.Series:
     """Cria uma série temporal diária de contagem de tickets para uma companhia."""
-    sub = df[df[COMPANY_COL] == company].copy()
+    sub = df[df["Company"] == company].copy()
     if sub.empty:
         return pd.Series(dtype=float)
-    s = sub.groupby(DATE_COL).size().rename("count")
+    s = sub.groupby("Date received").size().rename("count")
     idx = pd.date_range(start=s.index.min(), end=s.index.max(), freq="D")
     s = s.reindex(idx, fill_value=0)
-    s.index.name = DATE_COL
+    s.index.name = "Date received"
     return s
 
 
+# cria features para LightGBM
 def create_lgb_features(
     series: pd.Series, lags=[1, 7, 14, 30], windows=[7, 30]
 ) -> pd.DataFrame:
@@ -76,6 +80,7 @@ def create_lgb_features(
     return df
 
 
+# treina modelo LightGBM
 def train_lightgbm(series: pd.Series, forecast_days=FORECAST_DAYS):
     """Treina o modelo LightGBM e gera previsões iterativas."""
     df_feat = create_lgb_features(series)
@@ -217,14 +222,14 @@ def train_sarimax(
         return None
 
 
-def run_pipeline(csv_path=CSV_PATH):
+def run_pipeline(CSV_PATH: str):
     """Função principal que executa o pipeline de previsão para as top 5 companhias."""
     try:
-        df = parse_and_prep(csv_path)
+        df = parse_and_prep(CSV_PATH)
     except Exception as e:
         print(f"Erro na preparação dos dados: {e}")
         return None
-    top_companies = df[COMPANY_COL].value_counts().head(5).index.tolist()
+    top_companies = df["Company"].value_counts().head(5).index.tolist()
     print("\n" + "=" * 50)
     print(f"| Top 5 Companhias selecionadas: {top_companies}")
     print("=" * 50 + "\n")
@@ -346,7 +351,7 @@ def run_pipeline(csv_path=CSV_PATH):
         print("-" * 50 + "\n")
 
     metrics_df = pd.DataFrame(metrics_rows)
-    metrics_df.to_csv(METRICS_CSV, index=False)
+    metrics_df.to_csv("model_metrics.csv", index=False)
 
     sar_metrics = (
         metrics_df[["sar_mse", "sar_mae", "sar_rmse", "sar_r2"]].mean().to_dict()
@@ -373,14 +378,20 @@ def run_pipeline(csv_path=CSV_PATH):
 
 
 def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
-    """Gera gráficos comparativos das previsões e desempenho no teste."""
+    """
+    Gera gráficos em memória (bytes PNG) para cada previsão.
+    """
+
     if not forecasts_summary:
         print("Não há resultados para plotar.")
-        return
+        return []
 
     sns.set_style("whitegrid")
 
+    results = []
+
     for comp, data in forecasts_summary.items():
+
         series_data = data.get("raw_series")
         if isinstance(series_data, dict):
             series = pd.Series(series_data)
@@ -391,11 +402,11 @@ def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
         if series is None or series.empty:
             continue
 
-        # Pega previsões de SARIMAX / LGBM
+        # Previsões SARIMAX / LGBM
         preds_sar = pd.Series(data.get("sar_preds", {}))
         preds_lgb = pd.Series(data.get("lgb_preds", {}))
 
-        # Se não existirem previsões separadas, pega apenas a 'forecast'
+        # fallback caso só exista "forecast"
         if preds_sar.empty and preds_lgb.empty and "forecast" in data:
             preds = pd.Series(data["forecast"])
             preds.index = pd.to_datetime(preds.index)
@@ -404,11 +415,10 @@ def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
             else:
                 preds_lgb = preds
 
-        # Dados de teste (reais e previstos)
+        # Teste real e previsto
         y_test = data.get("y_test")
         y_pred_test = data.get("y_pred_test")
 
-        # Converter se vier como dict
         if isinstance(y_test, dict):
             y_test = pd.Series(y_test)
             y_test.index = pd.to_datetime(y_test.index)
@@ -416,81 +426,95 @@ def plot_results(forecasts_summary: Dict[str, Any], historical_days=180):
             y_pred_test = pd.Series(y_pred_test)
             y_pred_test.index = pd.to_datetime(y_pred_test.index)
 
-        # Determina o histórico a mostrar
+        # Janela a plotar
         start_date = series.index[-1] - pd.Timedelta(days=historical_days - 1)
         plot_series = series.loc[start_date:]
 
-        plt.figure(figsize=(14, 6))
+        # Criar figura
+        fig = plt.figure(figsize=(12, 6))
 
-        # Histórico (treino)
+        # Histórico
         plt.plot(
             plot_series.index,
             plot_series.values,
             label="Histórico (Treino)",
-            color="tab:blue",
+            color="#4B0082",
             linewidth=2,
         )
 
-        # Dados de Teste Reais
+        # Teste real
         if y_test is not None and not y_test.empty:
             plt.plot(
                 y_test.index,
                 y_test.values,
                 label="Teste (Real)",
                 color="tab:gray",
-                linestyle="-",
                 linewidth=2,
             )
 
-        # Predições no Teste
+        # Teste previsto
         if y_pred_test is not None and not y_pred_test.empty:
             plt.plot(
                 y_pred_test.index,
                 y_pred_test.values,
                 label="Teste (Previsto)",
-                color="tab:purple",
+                color="#FF1493",
                 linestyle="--",
                 linewidth=2,
             )
 
-        # Previsões futuras
+        # Futuro SARIMAX
         if not preds_sar.empty:
             plt.plot(
                 preds_sar.index,
                 preds_sar.values,
                 label="SARIMAX Futuro",
-                color="tab:orange",
+                color="#FF69B4",
                 linestyle="--",
             )
+
+        # Futuro LGBM
         if not preds_lgb.empty:
             plt.plot(
                 preds_lgb.index,
                 preds_lgb.values,
                 label="LightGBM Futuro",
-                color="tab:green",
+                color="#FF69B4",
                 linestyle="--",
             )
 
-        # Linha separadora entre histórico/teste/futuro
-        last_date_hist = series.index[-1]
+        # Linha separadora
+        last_date = series.index[-1]
         plt.axvline(
-            x=last_date_hist, color="red", linestyle=":", label="Início da Previsão"
+            x=last_date,
+            color="#808080",
+            linestyle=":",
+            linewidth=2,
+            label="Início da Previsão",
         )
 
-        # Título e labels
+        # Labels
         best_model = data.get("best_model", "Desconhecido")
         plt.title(f"Previsão de Tickets para {comp} ({best_model})", fontsize=16)
-        plt.xlabel("Data", fontsize=12)
-        plt.ylabel("Número de Tickets", fontsize=12)
-        plt.legend(loc="best")
+        plt.xlabel("Data")
+        plt.ylabel("Número de Tickets")
+        plt.legend()
         plt.tight_layout()
-        plt.show()
 
+        # Salvar em memória
+        buffer = BytesIO()
+        fig.savefig(buffer, format="png", dpi=150)
+        buffer.seek(0)
 
-print("Iniciando o Pipeline de Previsão...")
-forecast_summary = run_pipeline(CSV_PATH)
-if forecast_summary:
-    print("\n" + "=" * 50)
-    print("Gerando Gráficos de Previsão...")
-    print("=" * 50)
-    plot_results(forecast_summary)
+        plt.close(fig)
+
+        texto = (
+            f"A previsão para <b>{comp}</b> utiliza o modelo <b>{best_model}</b>. "
+            f"A linha cinza marca o início da previsão."
+        )
+
+        results.append(
+            {"titulo": f"{comp}", "texto": texto, "imagem": buffer.getvalue()}
+        )
+
+    return results

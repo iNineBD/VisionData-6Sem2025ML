@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
 WORKDIR /app
+ENV PYTHONPATH=/app
 
 # Instalar dependências do sistema necessárias
 RUN apt-get update && \
@@ -17,4 +18,6 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
 # Comando de inicialização: treina e depois inicia o servidor
-CMD ["bash", "-c", "python src/services/predict_all_ticketsv2/2_train_all_tickets.py && python controller/tickets_controller.py"]
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+CMD ["./entrypoint.sh"]

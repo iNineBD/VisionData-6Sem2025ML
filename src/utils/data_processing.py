@@ -1,20 +1,18 @@
 import pandas as pd
-from src.config import config
 
 
 def parse_and_prep(csv_path: str, group_col: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path, dtype=str)
     df.columns = [c.strip() for c in df.columns]
-    if config.DATE_COL not in df.columns or group_col not in df.columns:
-        raise ValueError(
-            f"CSV precisa conter colunas '{config.DATE_COL}' e '{group_col}'"
-        )
+    date_col = "Date received"
+    if date_col not in df.columns or group_col not in df.columns:
+        raise ValueError(f"CSV precisa conter colunas '{date_col}' e '{group_col}'")
 
-    df[config.DATE_COL] = pd.to_datetime(df[config.DATE_COL], errors="coerce")
-    df = df.dropna(subset=[config.DATE_COL, group_col])
+    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+    df = df.dropna(subset=[date_col, group_col])
     df[group_col] = df[group_col].str.strip()
-    df = df[[config.DATE_COL, group_col]]
-    df[config.DATE_COL] = df[config.DATE_COL].dt.normalize()
+    df = df[[date_col, group_col]]
+    df[date_col] = df[date_col].dt.normalize()
     return df
 
 
@@ -22,10 +20,11 @@ def make_daily_series(df: pd.DataFrame, group_value: str, group_col: str) -> pd.
     sub = df[df[group_col] == group_value].copy()
     if sub.empty:
         return pd.Series(dtype=float)
-    s = sub.groupby(config.DATE_COL).size().rename("count")
+    date_col = "Date received"
+    s = sub.groupby(date_col).size().rename("count")
     idx = pd.date_range(start=s.index.min(), end=s.index.max(), freq="D")
     s = s.reindex(idx, fill_value=0)
-    s.index.name = config.DATE_COL
+    s.index.name = date_col
     return s
 
 
